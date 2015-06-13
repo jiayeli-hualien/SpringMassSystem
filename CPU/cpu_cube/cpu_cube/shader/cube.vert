@@ -9,6 +9,6 @@ layout(location = 3) uniform mat4 PVM;
 
 void main()
 {
-	gl_Position = vPosition;
+	gl_Position = PVM*vPosition;
 	color = vColor;	
 }

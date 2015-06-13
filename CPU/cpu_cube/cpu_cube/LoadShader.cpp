@@ -5,7 +5,7 @@ GLuint LoadShader(ShaderInfo *shaderinfo){
 	GLuint program;
 
 	program = glCreateProgram();
-	glUseProgram(program);
+
 
 	while (shaderinfo->target)
 	{
@@ -29,7 +29,7 @@ GLuint LoadShader(ShaderInfo *shaderinfo){
 		}
 
 		GLchar *infoLog;
-		GLsizei buffLength = 0;
+		GLsizei buffLength = 5;
 		glGetShaderInfoLog(shader, NULL, &buffLength, NULL);
 		infoLog = new GLchar[buffLength+1];
 		infoLog[0] = '\0';
@@ -37,12 +37,17 @@ GLuint LoadShader(ShaderInfo *shaderinfo){
 		cout << "infolog :" << infoLog << endl;
 
 		delete[] infoLog;
-
+		glAttachShader(program, shader);
 		shaderinfo++;
 	}
 
 	glLinkProgram(program);
-
+	GLint status;
+	glGetProgramiv(program, GL_LINK_STATUS, &status);
+	if (status != GL_TRUE)
+	{
+		cerr << "Link fail" << endl;
+	}
 
 	return program;
 };

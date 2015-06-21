@@ -4,20 +4,32 @@
 mass spring system with damping
 
 觀察
+
+問題1. 力道/模擬精度
 力道太強 frameTime太長 速度太快
 會造成系統的不穩定及毀滅
 solution : 正統 frame time 縮短(更細的模擬單位時間要計算更多 frame 更吃效能)、使用更複雜的積分技巧
 				增加更多物理constraints
 		   非正統 加入阻力、終端速度、減少力道、增加不符合物理特性的 constraints
 		   其它(副作用帶來的好處) 加入阻尼
+
+問題2. 彈性碰撞
+目前只能彈碰係數降為0 比較安全
+然後取消 back face 的測試
+
+心得
+如果沒有視覺化，根本沒辦法除錯
+有著高效能的繪圖能力是對除錯有幫助的
+
 TODO list
 
 OK show points as mesh
-collision detection, ray to static mesh
+OK collision detection, ray to static mesh
 give the mesh normal vector
  load obj model, standford bunny
 OK damping, 有可能寫錯再查查文獻 (使用上一次的時間點的速度)
 OK? with some bug, Improved Eular Method
+AABB accelerlator
 openCL after Monday
 
 interpolation model by point info
@@ -46,6 +58,8 @@ Interactive Computer Graphics, A TOP-DOWN APPROACH WITH SHADER-BASED OPENGL®. E
 #include<glm\gtc\type_ptr.hpp>
 
 #include"LoadShader.h"
+#include"mathHelper.h"
+
 
 using namespace std;
 
@@ -73,7 +87,7 @@ GLuint VBOs[NumBuffers];
 GLuint EBOs[NumEBOs];
 
 //TODO auto generate
-GLint PATITION = 16;
+GLint PATITION = 8;
 GLfloat invPatition = 1.0f / (PATITION);
 GLfloat patition_dis = 1.0f / (PATITION);
 GLsizei CUBE_VERTEX_LENGTH = PATITION*PATITION*PATITION*4;//XYZ
@@ -145,7 +159,7 @@ void endPrintText();
 void keyAction(unsigned char key, int x, int y);
 void updateBufferObject();
 
-int drawMode = 1;
+int drawMode = 0;
 void display();
 void initCubeVertex();
 
@@ -156,60 +170,6 @@ void intitProgram();
 void init();
 
 
-struct Float3
-{
-	float x,y,z;
-	Float3 operator- (const Float3 &other) const
-	{
-		Float3 ans = {this->x-other.x,this->y-other.y,this->z-other.z};
-		return ans;
-	}
-	Float3 operator*(const float &m) const
-	{
-		Float3 ans = { this->x*m, this->y*m, this->z*m};
-		return ans;
-	}
-	Float3 operator/(const float &d) const
-	{
-		Float3 ans = { this->x/d, this->y/d, this->z/d };
-		return ans;
-	}
-
-	float dot(const Float3 &other) const
-	{
-		return this->x*other.x + this->y*other.y + this->z*other.z;
-	}
-
-	Float3& operator+=(const Float3 &f2)
-	{
-		this->x += f2.x;
-		this->y += f2.y;
-		this->z += f2.z;
-		return *this;
-	}
-
-	Float3 operator+(const Float3 &p2) const
-	{
-		Float3 ans={this->x+p2.x, this->y+p2.y, this->z+p2.z};
-		return ans;
-	}
-
-	float norm2()
-	{
-		return sqrt(x*x+y*y+z*z);
-	}
-
-	Float3 operator-()
-	{
-		Float3 ans={-this->x, -this->y, -this->z};
-		return ans;
-	}
-};
-Float3 operator*(const float m, const Float3 &f3)
-{
-	Float3 ans = { m*f3.x, m*f3.y, m*f3.z };
-	return ans;
-}
 
 const float DEFAULT_FRAME_T = 1.0 /  64.0f;
 float frameT = DEFAULT_FRAME_T;
@@ -691,24 +651,48 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 {
 	GLfloat* const vertex = positionsDst;
 	GLfloat const GROUND = 0.0f;
+
+	//test triangle palne
+	Float3 v0{ 0.0f, 0.5f, 0.0f }, v1{ 0.0f, 0.5f, 1.0f }, v2{ 1.0f, 0.5f, 1.0f };
+
+
 	for (int i = 0; i < cube_positions_size / sizeof(GLfloat); i += 4)
 	{
+		Float3 O = { positionsSrc[i], positionsSrc[i+1], positionsSrc[i+2] };
 		vertex[i] = positionsSrc[i] + velosity[i] * frameT;
 		vertex[i + 1] = positionsSrc[i + 1] + velosity[i + 1] * frameT;
 		vertex[i + 2] = positionsSrc[i + 2] + velosity[i + 2] * frameT;
 
+		
 		if (vertex[i + 1] <= GROUND)
 		{
 			vertex[i + 1] = -vertex[i + 1];
 			velosity[i + 1] = -velosity[i + 1];
 
-			vertex[i + 1] = -0;
-			velosity[i + 1] = 0;
 
 			//摩擦力
-			velosity[i] *= 0.9f;
-			velosity[i + 2] *= 0.9f;
+			velosity[i] = 0.0f;
+			velosity[i + 2] = 0.0f;
 		}
+
+	
+		//0.5 triangle plane test
+		Float3 diff = { vertex[i], vertex[i + 1], vertex[i + 2] };
+		diff = diff - O;
+		float t=0.0f, u=0.0f, v=0.0f;
+
+		
+		if (intersect_triangle(O, diff, v0, v1, v2, &t, &u, &v)!=0)
+		if (t < 1.0f)
+		{
+			//vertex[i + 1] = 0.5f + 2 * (0.5f - vertex[i + 1]);
+			//vertex[i+1] = O.y;
+			velosity[i + 1] = abs(velosity[i + 1]);
+
+			velosity[i] = 0.0f;
+			velosity[i + 2] = 0.0f;
+		}
+
 	}
 }
 

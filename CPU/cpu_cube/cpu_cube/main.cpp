@@ -87,7 +87,7 @@ GLuint VBOs[NumBuffers];
 GLuint EBOs[NumEBOs];
 
 //TODO auto generate
-GLint PATITION = 8;
+GLint PATITION = 16;
 GLfloat invPatition = 1.0f / (PATITION);
 GLfloat patition_dis = 1.0f / (PATITION);
 GLsizei CUBE_VERTEX_LENGTH = PATITION*PATITION*PATITION*4;//XYZ
@@ -136,8 +136,15 @@ ShaderInfo cubeShaderInfo[]=
 	{ GL_NONE, NULL}
 };
 
-GLuint cubeShaderProgram;
+ShaderInfo bunnyShaderInfo[]=
+{
+	{GL_VERTEX_SHADER, "shader\\bunny.vert"},
+	{GL_FRAGMENT_SHADER, "shader\\bunny.frag"},
+	{GL_NONE, NULL}
+};
 
+GLuint cubeShaderProgram;
+GLuint bunnyShaderProgram;
 
 inline int GET_INDEX(int x, int y, int z)
 {
@@ -159,7 +166,7 @@ void endPrintText();
 void keyAction(unsigned char key, int x, int y);
 void updateBufferObject();
 
-int drawMode = 0;
+int drawMode = 1;
 void display();
 void initCubeVertex();
 
@@ -173,8 +180,8 @@ void init();
 
 const float DEFAULT_FRAME_T = 1.0 /  64.0f;
 float frameT = DEFAULT_FRAME_T;
-float Gravity = -0.0025f*PATITION;//重力太強會壞掉
-float springForceK = 15.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
+float Gravity = -0.00025f*PATITION;//重力太強會壞掉
+float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
 float springDampK = 0.5f;
 const bool useDamp = true;
 float DISTANCE[4] = {0, invPatition, sqrt(2)*invPatition, sqrt(3)*invPatition};
@@ -190,7 +197,8 @@ const int IMPROVED_EULAR_METHOD = 1;
 int INTEGRATION = 1;
 void gameLoop();
 
-
+#include "LoadObj.h"
+LoadObj modelBunny;
 int main(int argc, char * argv[])
 {
 	windowparam.width = 800;
@@ -287,8 +295,10 @@ void display()
 	updateFPS();
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+
 	glUseProgram(cubeShaderProgram);
 	glEnable(GL_DEPTH_TEST);
+	
 	glBindVertexArray(VAOs[0]);
 	glBindBuffer(GL_ARRAY_BUFFER, VBOs[0]);
 
@@ -302,7 +312,8 @@ void display()
 	glm::mat4 model = glm::mat4(1);
 	glm::mat4 PVM = projection*view*model;
 
-
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);//offset start from 0
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid * const)cube_positions_size);//offset
 	glProgramUniformMatrix4fv(cubeShaderProgram,
 		glGetUniformLocation(cubeShaderProgram, "PVM"),
 		1, GL_FALSE, glm::value_ptr(PVM));
@@ -319,12 +330,26 @@ void display()
 	}
 
 
-
-
-	glPointSize(20.0);
-	//glPointSize(10.0);
+	//glPointSize(20.0);
+	glPointSize(10.0);
 	if (drawMode == 0 || drawMode == 2)
 		glDrawArrays(GL_POINTS, 0, cube_positions_size / sizeof(GLfloat) / 4);
+
+	glUseProgram(bunnyShaderProgram);
+	glProgramUniformMatrix4fv(cubeShaderProgram,
+		glGetUniformLocation(cubeShaderProgram, "PVM"),
+		1, GL_FALSE, glm::value_ptr(PVM));
+	modelBunny.draw();
+
+
+
+
+
+
+	
+
+
+
 
 
 	//init
@@ -342,9 +367,10 @@ void display()
 
 void initCubeVertex()
 {
-	GLfloat originX = 0.0f;
-	GLfloat originY = 1.0f;
-	GLfloat originZ = 0.0f;
+	glm::mat4x4 modelMatrix;
+	
+	modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f,1.0f,0.0f));
+	//modelMatrix = glm::rotate(modelMatrix, 30.0f / 180.0f*glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
 
 	cube_positions = new GLfloat[CUBE_VERTEX_LENGTH * 4];
 	cube_positions_IEM = new GLfloat[CUBE_VERTEX_LENGTH * 4];
@@ -359,10 +385,21 @@ void initCubeVertex()
 			for (int k = 0; k < PATITION; k++)//z
 			{
 				int index = GET_INDEX(i, j, k);
-				cube_positions[index] = i*patition_dis + originX;//x
-				cube_positions[index + 1] = j*patition_dis + originY;//y
-				cube_positions[index + 2] = k*patition_dis + originZ;//z
+				cube_positions[index] = i*patition_dis;//x
+				cube_positions[index + 1] = j*patition_dis ;//y
+				cube_positions[index + 2] = k*patition_dis ;//z
 				cube_positions[index + 3] = 1.0f;//w for homogeneous system
+
+
+				glm::vec4 position(cube_positions[index], cube_positions[index+1], cube_positions[index+2], cube_positions[index+3]);
+
+				position = modelMatrix*position;
+
+				cube_positions[index] = position.x / position.w;
+				cube_positions[index + 1] = position.y / position.w;
+				cube_positions[index + 2] = position.z / position.w;
+				cube_positions[index + 3] = position.w / position.w;
+
 
 				cube_positions_IEM[index + 3] = 1.0f;//w for homogeneous system
 			}
@@ -515,6 +552,7 @@ void initBuffers()
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);//offset start from 0
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid * const)cube_positions_size);//offset
 
+
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 }
@@ -522,8 +560,11 @@ void initBuffers()
 void intitProgram()
 {
 	cubeShaderProgram = LoadShader(cubeShaderInfo);
+	bunnyShaderProgram = LoadShader(bunnyShaderInfo);
 }
 
+
+bool loadBunny = true;
 void init()
 {
 	glViewport(0, 0, windowparam.width, windowparam.height);
@@ -538,6 +579,12 @@ void init()
 	initCubeVertex();
 	initCubeMesh();
 	initBuffers();
+	if (loadBunny)
+	{
+		//modelBunny.load("model\\bunny.obj");
+		modelBunny.load("model\\triangle.obj");
+		modelBunny.initGL_Buffer();
+	}
 	intitProgram();
 }
 
@@ -646,14 +693,15 @@ void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force)
 	}
 }
 
-
+bool testIntersection = false;
+bool testIntersection2 = true;
 void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst)
 {
 	GLfloat* const vertex = positionsDst;
 	GLfloat const GROUND = 0.0f;
 
 	//test triangle palne
-	Float3 v0{ 0.0f, 0.5f, 0.0f }, v1{ 0.0f, 0.5f, 1.0f }, v2{ 1.0f, 0.5f, 1.0f };
+	Float3 v0{ -0.1f, 0.5f, -0.1f }, v1{ -0.1f, 0.5f, 1.0f }, v2{ 1.0f, 0.5f, 1.0f };
 
 
 	for (int i = 0; i < cube_positions_size / sizeof(GLfloat); i += 4)
@@ -675,24 +723,68 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 			velosity[i + 2] = 0.0f;
 		}
 
-	
-		//0.5 triangle plane test
-		Float3 diff = { vertex[i], vertex[i + 1], vertex[i + 2] };
-		diff = diff - O;
-		float t=0.0f, u=0.0f, v=0.0f;
-
-		
-		if (intersect_triangle(O, diff, v0, v1, v2, &t, &u, &v)!=0)
-		if (t < 1.0f)
+		if (testIntersection)
 		{
-			//vertex[i + 1] = 0.5f + 2 * (0.5f - vertex[i + 1]);
-			//vertex[i+1] = O.y;
-			velosity[i + 1] = abs(velosity[i + 1]);
 
-			velosity[i] = 0.0f;
-			velosity[i + 2] = 0.0f;
+			//0.5 triangle plane test
+			Float3 diff = { vertex[i], vertex[i + 1], vertex[i + 2] };
+			diff = diff - O;
+			float t = 0.0f, u = 0.0f, v = 0.0f;
+
+
+			if (intersect_triangle(O, diff, v0, v1, v2, &t, &u, &v) != 0)
+			if (t <= 1.0f)
+			{
+				//vertex[i + 1] = 0.5f + 2 * (0.5f - vertex[i + 1]);
+				//vertex[i+1] = 0.5f;//座標別改了 Q_Q
+				velosity[i + 1] = abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
+
+
+				//velosity[i] = 0.0f;
+				//velosity[i + 2] = 0.0f;
+			}
 		}
+		if (testIntersection2)
+		{
+			//0.5 triangle plane test
+			for (int j = 0; j<modelBunny.n_face; j+=1)
+			{
+				int v0Index = modelBunny.faces[j*3];
+				int v1Index = modelBunny.faces[j*3 + 1];
+				int v2Index = modelBunny.faces[j*3 + 2];
 
+				Float3 v0{ modelBunny.vertex[v0Index * 4],
+					modelBunny.vertex[v0Index * 4 + 1],
+					modelBunny.vertex[v0Index * 4 + 2] };
+
+				Float3 v1{ modelBunny.vertex[v1Index * 4],
+					modelBunny.vertex[v1Index * 4 + 1],
+					modelBunny.vertex[v1Index * 4 + 2] };
+
+				Float3 v2{
+					modelBunny.vertex[v2Index * 4],
+					modelBunny.vertex[v2Index * 4 + 1],
+					modelBunny.vertex[v2Index * 4 + 2]
+				};
+
+				Float3 diff = { vertex[i], vertex[i + 1], vertex[i + 2] };
+				diff = diff - O;
+				float t = 0.0f, u = 0.0f, v = 0.0f;
+
+
+				if (intersect_triangle(O, diff, v0, v1, v2, &t, &u, &v) != 0)
+				if (t <= 1.0f)
+				{
+					//vertex[i + 1] = 0.5f + 2 * (0.5f - vertex[i + 1]);
+					//vertex[i+1] = 0.5f;//座標別改了 Q_Q
+					velosity[i + 1] = abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
+					//velosity[i + 1] = 0.0f;
+
+					//velosity[i] = 0.0f;
+					//velosity[i + 2] = 0.0f;
+				}
+			}
+		}
 	}
 }
 

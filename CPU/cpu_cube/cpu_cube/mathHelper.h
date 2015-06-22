@@ -57,7 +57,7 @@ Float3 cross(const Float3 &v1, const Float3 &v2)
 	return{ v1.y*v2.z - v1.z*v2.y, v1.z*v2.x - v1.x*v2.z, v1.x*v2.y - v1.y*v2.x };
 }
 
-#define TEST_CULL
+//#define TEST_CULL
 //MT97
 //ray triangle intersection
 const float INTEC_EPSILON = 0.000001f;

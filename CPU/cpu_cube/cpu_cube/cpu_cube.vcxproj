@@ -149,10 +149,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="LoadObj.cpp" />
     <ClCompile Include="LoadShader.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="LoadObj.h" />
     <ClInclude Include="LoadShader.h" />
     <ClInclude Include="mathHelper.h" />
   </ItemGroup>

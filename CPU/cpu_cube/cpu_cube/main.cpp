@@ -14,8 +14,8 @@ solution : 正統 frame time 縮短(更細的模擬單位時間要計算更多 f
 		   其它(副作用帶來的好處) 加入阻尼
 
 問題2. 彈性碰撞
-目前只能彈碰係數降為0 比較安全
-然後取消 back face 的測試
+目前只能彈碰係數降為0 比較安全?
+然後取消 back face 的測試??
 
 心得
 如果沒有視覺化，根本沒辦法除錯
@@ -28,6 +28,10 @@ OK collision detection, ray to static mesh
 give the mesh normal vector
  load obj model, standford bunny
 OK damping, 有可能寫錯再查查文獻 (使用上一次的時間點的速度)
+	TODO: 將 damp 與 spring force 分離
+		  因為要將過強的 damp 改為最多將度降為0
+		  但是強力的 spring force 也有加強彈力的功能?
+
 OK? with some bug, Improved Eular Method
 AABB accelerlator
 openCL after Monday
@@ -179,22 +183,22 @@ void init();
 
 
 const float DEFAULT_FRAME_T = 1.0 /  64.0f;
-float frameT = DEFAULT_FRAME_T;
+float frameT = DEFAULT_FRAME_T;//step time, frame time
 float Gravity = -0.00025f*PATITION;//重力太強會壞掉
 float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
-float springDampK = 0.5f;
+float springDampK = 0.5f;//Hooke's law, K
 const bool useDamp = true;
 float DISTANCE[4] = {0, invPatition, sqrt(2)*invPatition, sqrt(3)*invPatition};
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance);
 Float3 calcSpringForce(int i, int j, int k, Float3 &p1, Float3 &v1, GLfloat *positions, GLfloat *velosity);
-void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);
-void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force);
-void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst);
-void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity);
+void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);//v = at
+void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force);// g = g(u(t), t)   u is position & velosity
+void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst);//x=vt and collision detection
+void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity);//a = 
 
 const int EULAR_METHOD = 0;
 const int IMPROVED_EULAR_METHOD = 1;
-int INTEGRATION = 1;
+int INTEGRATION = IMPROVED_EULAR_METHOD;
 void gameLoop();
 
 #include "LoadObj.h"
@@ -367,10 +371,19 @@ void display()
 
 void initCubeVertex()
 {
+	float transX=0.0f;
+	float transY=1.0f;
+	float transZ=0.0f;
+	float rotate = 0.0f;
+
 	glm::mat4x4 modelMatrix;
 	
-	modelMatrix = glm::translate(modelMatrix, glm::vec3(0.0f,1.0f,0.0f));
-	//modelMatrix = glm::rotate(modelMatrix, 30.0f / 180.0f*glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+
+	modelMatrix = glm::translate(modelMatrix, glm::vec3(transX, transY, transZ));
+	modelMatrix = glm::translate(modelMatrix, glm::vec3(0.5f, 0.5f, 0.5f));
+	modelMatrix = glm::rotate(modelMatrix, rotate / 180.0f*glm::pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+	modelMatrix = glm::translate(modelMatrix, glm::vec3(-0.5f, -0.5f, -0.5f));
 
 	cube_positions = new GLfloat[CUBE_VERTEX_LENGTH * 4];
 	cube_positions_IEM = new GLfloat[CUBE_VERTEX_LENGTH * 4];
@@ -694,11 +707,11 @@ void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force)
 }
 
 bool testIntersection = false;
-bool testIntersection2 = true;
-void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst)
+bool testIntersectionModel = true;
+void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst, bool enable_collision_detection)
 {
 	GLfloat* const vertex = positionsDst;
-	GLfloat const GROUND = 0.0f;
+	GLfloat const GROUND = -0.1f;
 
 	//test triangle palne
 	Float3 v0{ -0.1f, 0.5f, -0.1f }, v1{ -0.1f, 0.5f, 1.0f }, v2{ 1.0f, 0.5f, 1.0f };
@@ -711,16 +724,9 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 		vertex[i + 1] = positionsSrc[i + 1] + velosity[i + 1] * frameT;
 		vertex[i + 2] = positionsSrc[i + 2] + velosity[i + 2] * frameT;
 
-		
-		if (vertex[i + 1] <= GROUND)
+		if (!enable_collision_detection)
 		{
-			vertex[i + 1] = -vertex[i + 1];
-			velosity[i + 1] = -velosity[i + 1];
-
-
-			//摩擦力
-			velosity[i] = 0.0f;
-			velosity[i + 2] = 0.0f;
+			continue;
 		}
 
 		if (testIntersection)
@@ -744,7 +750,8 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 				//velosity[i + 2] = 0.0f;
 			}
 		}
-		if (testIntersection2)
+
+		if (testIntersectionModel)
 		{
 			//0.5 triangle plane test
 			for (int j = 0; j<modelBunny.n_face; j+=1)
@@ -775,15 +782,28 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 				if (intersect_triangle(O, diff, v0, v1, v2, &t, &u, &v) != 0)
 				if (t <= 1.0f)
 				{
-					//vertex[i + 1] = 0.5f + 2 * (0.5f - vertex[i + 1]);
-					//vertex[i+1] = 0.5f;//座標別改了 Q_Q
+					vertex[i + 1] = abs(vertex[i + 1]);
+					//vertex[i+1] = 0.0f;//座標別改了 Q_Q
 					velosity[i + 1] = abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
-					//velosity[i + 1] = 0.0f;
+					velosity[i + 1] = 0.0f;
 
 					//velosity[i] = 0.0f;
 					//velosity[i + 2] = 0.0f;
 				}
 			}
+			continue;
+		}
+
+		
+		if (vertex[i + 1] <= GROUND)
+		{
+		vertex[i + 1] = -vertex[i + 1];
+		velosity[i + 1] = -velosity[i + 1];
+
+
+		//摩擦力
+		velosity[i] = 0.0f;
+		velosity[i + 2] = 0.0f;
 		}
 	}
 }
@@ -818,21 +838,21 @@ void gameLoop()
 	{
 		updateForce(cube_positions, cube_velosity, cube_force);
 		applyForce(cube_force, cube_velosity, cube_velosity);
-		updatePosition(cube_velosity, cube_positions, cube_positions);
+		updatePosition(cube_velosity, cube_positions, cube_positions, true);
 	}
 	else
 	if (INTEGRATION == IMPROVED_EULAR_METHOD)
 	{
 		updateForce(cube_positions, cube_velosity, cube_force);//g(u(t),t) in cube_force
 		applyForce(cube_force, cube_velosity, cube_velosity_IEM);//vx vy vz of u(t+h) in cube_velosity_IEM
-		updatePosition(cube_velosity_IEM, cube_positions, cube_positions_IEM);//x,y,z of u(t+h) in  cube_positions_IEM
+		updatePosition(cube_velosity_IEM, cube_positions, cube_positions_IEM, false);//x,y,z of u(t+h) in  cube_positions_IEM
 
 		//u(t) in cube_positions & cube_velosity
 
 		//calc g(u(t+h), t+h)
 		updateForce(cube_positions_IEM, cube_velosity_IEM, cube_force_IEM);
 		applyForceIEM(cube_force_IEM, cube_force, cube_velosity);
-		updatePosition(cube_velosity, cube_positions, cube_positions);
+		updatePosition(cube_velosity, cube_positions, cube_positions, true);
 
 	}
 

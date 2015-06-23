@@ -3,6 +3,11 @@
 質量彈簧系統做阻尼運動
 mass spring system with damping
 
+Project目的:
+增強效能、縮短 step time slot。模擬的越精確、力量就能越大而不出錯。
+time slot 越小，代表每秒能計算越多張，物體的移動速度就能越快而不出錯。
+計算能力越強，模擬所需的時間越短，越方便開發人員除錯。
+
 觀察
 
 問題1. 力道/模擬精度
@@ -189,6 +194,7 @@ float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷�
 float springDampK = 0.5f;//Hooke's law, K
 const bool useDamp = true;
 float DISTANCE[4] = {0, invPatition, sqrt(2)*invPatition, sqrt(3)*invPatition};
+//float DISTANCE[4] = { 0, invPatition, invPatition, invPatition };
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance);
 Float3 calcSpringForce(int i, int j, int k, Float3 &p1, Float3 &v1, GLfloat *positions, GLfloat *velosity);
 void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);//v = at

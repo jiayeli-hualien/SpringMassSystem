@@ -158,6 +158,7 @@
     <ClInclude Include="LoadObj.h" />
     <ClInclude Include="LoadShader.h" />
     <ClInclude Include="mathHelper.h" />
+    <ClInclude Include="testOpenCL.h" />
     <ClInclude Include="vsync.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

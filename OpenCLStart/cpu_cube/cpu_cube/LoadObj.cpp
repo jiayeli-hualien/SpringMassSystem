@@ -103,7 +103,7 @@ void LoadObj::initGL_Buffer()
 {
 	glGenBuffers(1,&(this->ebo));
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)*this->n_face*3, this->faces, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint)*this->n_face * 3, this->faces, GL_STATIC_DRAW);
 
 	glGenBuffers(1,&(this->vao));
 	glBindBuffer(GL_VERTEX_ARRAY, this->vao);
@@ -111,8 +111,10 @@ void LoadObj::initGL_Buffer()
 
 	glGenBuffers(1, &(this->vbo_vertex));
 	glBindBuffer(GL_ARRAY_BUFFER, this->vbo_vertex);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*(this->n_vertex*4+this->n_normal*4), NULL, GL_STATIC_DRAW);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat)*(this->n_vertex)*4, this->vertex);
+
+
+	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*(this->n_vertex * 4 + this->n_normal * 4), NULL, GL_STATIC_DRAW);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat)*(this->n_vertex*4), this->vertex);
 	glBufferSubData(GL_ARRAY_BUFFER, sizeof(GLfloat)*(this->n_vertex*4), sizeof(GLfloat)*(this->n_normal*4), this->normal);
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);//offset start from 0
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid * const) (sizeof(GLfloat)*(this->n_vertex)*4));//offset
@@ -123,15 +125,18 @@ void LoadObj::initGL_Buffer()
 
 void LoadObj::draw()
 {
+
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 	glBindBuffer(GL_VERTEX_ARRAY, vao);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_vertex);
+
 
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);//offset start from 0
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (GLvoid * const)(sizeof(GLfloat)*(this->n_vertex)*4));//offset
 
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
+
 
 	glDrawElements(GL_TRIANGLES, this->n_face*3, GL_UNSIGNED_INT,0);
 	//glDrawArrays(GL_POINTS, 0, this->n_vertex);

@@ -346,8 +346,8 @@ void display()
 		glDrawArrays(GL_POINTS, 0, cube_positions_size / sizeof(GLfloat) / 4);
 
 	glUseProgram(bunnyShaderProgram);
-	glProgramUniformMatrix4fv(cubeShaderProgram,
-		glGetUniformLocation(cubeShaderProgram, "PVM"),
+	glProgramUniformMatrix4fv(bunnyShaderProgram,
+		glGetUniformLocation(bunnyShaderProgram, "PVM"),
 		1, GL_FALSE, glm::value_ptr(PVM));
 	modelBunny.draw();
 

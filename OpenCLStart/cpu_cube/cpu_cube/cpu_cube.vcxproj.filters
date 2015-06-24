@@ -26,13 +26,19 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="LoadShader.h">
-      <Filter>原始程式檔</Filter>
+    <ClInclude Include="LoadObj.h">
+      <Filter>標頭檔</Filter>
+    </ClInclude>
+    <ClInclude Include="vsync.h">
+      <Filter>標頭檔</Filter>
+    </ClInclude>
+    <ClInclude Include="testOpenCL.h">
+      <Filter>標頭檔</Filter>
     </ClInclude>
     <ClInclude Include="mathHelper.h">
-      <Filter>原始程式檔</Filter>
+      <Filter>標頭檔</Filter>
     </ClInclude>
-    <ClInclude Include="LoadObj.h">
+    <ClInclude Include="LoadShader.h">
       <Filter>標頭檔</Filter>
     </ClInclude>
   </ItemGroup>

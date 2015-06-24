@@ -1,6 +1,5 @@
 #version 410 core
 out vec4 fColor;
-flat in vec4 color;
 in vec4 normal;
 
 void main()

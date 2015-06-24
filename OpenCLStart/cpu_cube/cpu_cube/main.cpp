@@ -66,12 +66,19 @@ Interactive Computer Graphics, A TOP-DOWN APPROACH WITH SHADER-BASED OPENGL®. E
 #include<glm\gtc\matrix_transform.hpp>
 #include<glm\gtc\type_ptr.hpp>
 
+#include<CL\cl.h>
+#include<CL\cl_gl.h>
+
+using namespace std;
+
+
 #include"LoadShader.h"
 #include"mathHelper.h"
 #include"vsync.h"
+#include"testOpenCL.h"
 
 
-using namespace std;
+
 
 struct WindowParam
 {
@@ -188,7 +195,7 @@ void init();
 
 
 
-const float DEFAULT_FRAME_T = 1.0 /  60.0f;
+const float DEFAULT_FRAME_T = 1.0 /  64.0f;
 float frameT = DEFAULT_FRAME_T;//step time, frame time
 float Gravity = -0.0025f*PATITION;//重力太強會壞掉
 float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
@@ -200,122 +207,80 @@ Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const F
 Float3 calcSpringForce(int i, int j, int k, Float3 &p1, Float3 &v1, GLfloat *positions, GLfloat *velosity);
 void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);//v = at
 void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force);// g = g(u(t), t)   u is position & velosity
+
+
+float BOUNCE_COEF = 0.95f;
 void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst);//x=vt and collision detection
 void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity);//a = 
+
+
+char *loadCLKernelFile(char* fileName, size_t *retStringSize);
+//http://web.engr.oregonstate.edu/~mjb/cs475/Handouts/opencl.opengl.vbo.6pp.pdf
+namespace UseCL{
+
+	//TODO 3D ND Range, PATITION^3
+
+	cl_platform_id *platforms = NULL;
+	cl_uint num_platforms;
+	cl_uint usePlatform = 1;
+
+	cl_device_id *device_list = NULL;
+	cl_uint num_devices;
+	cl_context context = 0;
+
+	cl_command_queue command_queue = 0;
+
+	cl_program program_updateForce;
+	cl_kernel kernel_updateForce;
+
+	cl_program program_applyForce;
+	cl_kernel kernel_applyForce;
+
+	cl_program program_updatePosition;
+	cl_kernel kernel_updatePosition;
+
+	size_t global_size[3];
+	size_t local_size[3] = {1,1,1};
+
+	cl_mem position_clmem;
+	cl_mem velosity_clmem;
+	cl_mem force_clmem;
+
+	bool isCLGLInteropSupported(char* extensionString);
+	void initCL();
+	void calcSpringForceCL();
+	void applyForceCL();
+	void updateForceCL();
+	void gpuCLUpdate();
+}
+
+
 
 const int EULAR_METHOD = 0;
 const int IMPROVED_EULAR_METHOD = 1;
 int INTEGRATION = IMPROVED_EULAR_METHOD;
+bool enableUpdate = true;
+
+const int CPP_CPU_UPDATE=0;
+const int CL_GPU_UPDATE = 1;
+int UPDATE_METHOD = CL_GPU_UPDATE;
+
+void cpuUpdate();
 void gameLoop();
 
 
-//copy the test example code from the book
-//OpenCL Programming by Example
-
-#include <CL/cl.h>
-//OpenCL kernel which is run for every work item created.
-namespace SAXPY{
-	const int SAXPY_VECTOR_SIZE = 1024;
-	const char *saxpy_kernel =
-		"__kernel \n"
-		"void saxpy_kernel(float alpha, \n"
-		" __global float *A, \n"
-		" __global float *B, \n"
-		" __global float *C) \n"
-		"{ \n"
-		" //Get the index of the work-item \n"
-		" int index = get_global_id(0); \n"
-		" C[index] = alpha* A[index] + B[index]; \n"
-		"} \n";
-	float alpha = 1.0f;
-	float *A=NULL, *B=NULL, *C=NULL;
-	cl_platform_id *platforms = NULL;
-	cl_uint num_platforms;
-	cl_uint usePlatform = 0;
-
-	cl_device_id *device_list=NULL;
-	cl_uint num_devices;
-
-	cl_context context;
-
-	void initSAXPY()
-	{
-		//allocating space
-		A = new float[SAXPY_VECTOR_SIZE];
-		B = new float[SAXPY_VECTOR_SIZE];
-		C = new float[SAXPY_VECTOR_SIZE];
-
-		for (int i = 0; i < SAXPY_VECTOR_SIZE; i++)
-		{
-			A[i] = i;
-			B[i] = SAXPY_VECTOR_SIZE - i;
-			C[i] = 0;
-		}
-	
-		//NULL means "I don't need this info"
-
-		//Only get num of platforms
-		cl_int clStatus = clGetPlatformIDs(0, NULL, &num_platforms);
-		cout << "num of platforms :" << num_platforms << endl;
-		return;
-
-		//Allocating yeah~~
-		platforms = new cl_platform_id[num_platforms];
-		//give all the platforms ID
-		clStatus = clGetPlatformIDs(num_platforms, platforms, NULL);
-		
-		//get the device num
-		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
-
-		device_list = new cl_device_id[num_devices];
-		//get the device list
-		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
 
 
-		//context = clCreateContext(NULL, num_devices, device_list, NULL, NULL, &clStatus);
-	}
-	void checkSAXPY()
-	{
 
-	}
-	void runSAXPY()
-	{
-		//add two times
-		//read back
-		//check answer
-	}
-	
-	void finalizeSAXPY()
-	{
-		//release resoucres
-		if (A)
-			delete [] A;
-		if (B)
-			delete [] B;
-		if (C)
-			delete [] C;
 
-		if (platforms)
-			delete platforms;
-		if (device_list)
-			delete device_list;
-
-		cl_int clStatus;
-		clStatus = clReleaseContext(context);
-	}
-	void testOpenCL()
-	{
-		initSAXPY();
-		//runSAXPY();
-		//finalizeSAXPY();
-	}
-}
 
 #include "LoadObj.h"
 LoadObj modelBunny;
+bool testSAXPY_opencl = true;
 int main(int argc, char * argv[])
 {
-	SAXPY::testOpenCL();
+	if (testSAXPY_opencl)
+		SAXPY::testOpenCL();
 
 
 
@@ -340,6 +305,7 @@ int main(int argc, char * argv[])
 	glutKeyboardFunc(keyAction);
 	glutDisplayFunc(display);
 	glutIdleFunc(gameLoop);
+
 	glutMainLoop();
 	return 0;
 }
@@ -673,7 +639,7 @@ void initBuffers()
 
 	glGenBuffers(1, VBOs);
 	glBindBuffer(GL_ARRAY_BUFFER, VBOs[0]);
-	glBufferData(GL_ARRAY_BUFFER, cube_positions_size + cube_colors_size, NULL, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, cube_positions_size + cube_colors_size, NULL, GL_STATIC_DRAW);
 	glBufferSubData(GL_ARRAY_BUFFER, 0, cube_positions_size, cube_positions);
 	glBufferSubData(GL_ARRAY_BUFFER, cube_positions_size, cube_colors_size, cube_colors);
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);//offset start from 0
@@ -727,6 +693,8 @@ void init()
 
 	intiShaderProgram();
 
+
+	UseCL::initCL();
 }
 
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance)
@@ -736,6 +704,7 @@ Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const F
 	//f = -kx
 	Float3 diff = (p1 - p2);
 	Float3 diffV = (v1 - v2);
+	//TODO 改成 epsilon
 	if (diff.norm2() == 0.0f)
 		return force;
 
@@ -748,7 +717,7 @@ Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const F
 		force = dir*(springForce - sprintDamping);
 	}
 	else
-		force = force = dir*(-1.0f)*(springForce);
+		force = dir*(-1.0f)*(springForce);
 
 	return force;
 }
@@ -912,7 +881,7 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 				{
 					vertex[i + 1] = abs(vertex[i + 1]);
 					//vertex[i+1] = 0.0f;//座標別改了 Q_Q
-					velosity[i + 1] = abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
+					velosity[i + 1] = BOUNCE_COEF*abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
 					//velosity[i + 1] = 0.0f;
 
 					//velosity[i] = 0.0f;
@@ -956,12 +925,9 @@ void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity)
 }
 
 
-void gameLoop()
+void cpuUpdate()
 {
-	//for (int i = 0; i < cube_positions_size / 4; i += 4)
-	//{
-	//	printf("%f %f %f %f \n", cube_positions[i], cube_positions[i + 1], cube_positions[i + 2], cube_positions[i + 3]);
-	//}
+
 	if (INTEGRATION == EULAR_METHOD)
 	{
 		updateForce(cube_positions, cube_velosity, cube_force);
@@ -984,9 +950,30 @@ void gameLoop()
 
 	}
 
-
 	updateBufferObject();
+}
+
+void gameLoop()
+{
+	//for (int i = 0; i < cube_positions_size / 4; i += 4)
+	//{
+	//	printf("%f %f %f %f \n", cube_positions[i], cube_positions[i + 1], cube_positions[i + 2], cube_positions[i + 3]);
+	//}
+	if (enableUpdate)
+	{
+
+		switch (UPDATE_METHOD)
+		{
+		case 0:
+			cpuUpdate();
+			break;
+		case 1:
+			UseCL::gpuCLUpdate();
+			break;
+		}
+	}
 	glutPostRedisplay();
+
 }
 
 void updateBufferObject()
@@ -1003,22 +990,354 @@ void keyAction(unsigned char key, int x, int y)
 {
 	printf("press %c\n", key);
 
-	if (key == '0')
+
+	switch (key)
 	{
-		drawMode = 0;
+		case 27:
+			exit(0);
+			break;
+		case '0':
+			drawMode = 0;
+			break;
+		case '1':
+			drawMode = 1;
+			break;
+		case '2':
+			drawMode = 2;
+			break;
+		case 'P':
+		case 'p':
+			enableUpdate ^= 1;
+			break;
+
+		
+		default:
+			break;
+	}
+
+
+	return;
+}
+
+
+
+
+void UseCL::initCL()
+{
+	global_size[0] = global_size[1] = global_size[2] = PATITION;
+	//NULL means "I don't need this info"
+
+	//Only get num of platforms
+	cl_int clStatus = clGetPlatformIDs(0, NULL, &num_platforms);
+	std::cout << "num of platforms :" << num_platforms << endl;
+
+
+	//Allocating yeah~~
+	platforms = new cl_platform_id[num_platforms];
+	//give all the platforms ID
+	clStatus = clGetPlatformIDs(num_platforms, platforms, NULL);
+
+	std::cout << "name of platforms : " << endl;
+	bool interpo = false;
+	for (int i = 0; i < num_platforms; i++)
+	{
+		std::cout << i + 1 << " ";
+		cl_uint cl_platform_enum[] = { CL_PLATFORM_NAME, CL_PLATFORM_VENDOR, CL_PLATFORM_VERSION,
+			CL_PLATFORM_EXTENSIONS, CL_PLATFORM_PROFILE };
+
+		for (int j = 0; j < sizeof(cl_platform_enum) / sizeof(cl_uint); j++)
+		{
+			char *buffer;
+			size_t num_char;
+			clGetPlatformInfo(platforms[i], cl_platform_enum[j], 0, NULL, &num_char);
+			buffer = new char[num_char + 1];
+			clGetPlatformInfo(platforms[i], cl_platform_enum[j], num_char, buffer, &num_char);
+			if (j>0)
+				std::cout << ", ";
+			std::cout << buffer;
+
+			if (cl_platform_enum[j] == CL_PLATFORM_EXTENSIONS)
+			{
+				interpo = isCLGLInteropSupported(buffer);
+			}
+
+			delete[] buffer;
+		}
+		std::cout << endl;
+		//TEST GL CL InteropSupported
+		std::cout << "Suppert GL_CL interop Supperted?" << interpo << endl;
+
+
+		std::cout << endl;
+	}
+	std::cout << endl;
+
+	
+
+
+
+	//get the device num
+	clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+
+	device_list = new cl_device_id[num_devices];
+	//get the device list
+	clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, num_devices, device_list, &num_devices);
+
+
+	std::cout << "device list (GPU devices)" << endl;
+	for (int i = 0; i < num_devices; i++)
+	{
+		std::cout << i + 1 << " ";
+		char *buffer;
+		size_t num_char;
+		clGetDeviceInfo(device_list[i], CL_DEVICE_NAME, 0, NULL, &num_char);
+		buffer = new char[num_char + 1];
+		clGetDeviceInfo(device_list[i], CL_DEVICE_NAME, num_char, buffer, &num_char);
+		std::cout << buffer << endl;
+		delete[] buffer;
+	}
+	std::cout << endl;
+	
+	
+	// 3. create a special opencl context based on the opengl context:
+	cl_context_properties props[] =
+	{
+		CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext(),
+		CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC(),
+		CL_CONTEXT_PLATFORM, (cl_context_properties)platforms[usePlatform],
+		0
+	};
+	
+	context = clCreateContext(props, num_devices, device_list, NULL, NULL, &clStatus);
+	cout << "create context" << clStatus << endl;
+	//create a command queue
+	command_queue = clCreateCommandQueue(context, device_list[0], 0, &clStatus);
+	cout << "create command queue" << clStatus << endl;
+
+	velosity_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
+	position_clmem = clCreateFromGLBuffer(context, CL_MEM_READ_WRITE, VBOs[0], &clStatus);
+	force_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
+
+	//clear data
+	clStatus = clEnqueueWriteBuffer(command_queue, velosity_clmem, CL_TRUE, 0, cube_positions_size, cube_velosity, 0, NULL, NULL);
+	clStatus = clEnqueueWriteBuffer(command_queue, force_clmem, CL_TRUE, 0, cube_positions_size, cube_force, 0, NULL, NULL);
+	clStatus = clEnqueueWriteBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
+
+	clStatus = clFlush(command_queue);
+	clStatus = clFinish(command_queue);
+	
+
+	char *kernelBuff=NULL;
+	size_t code_size=0;
+	kernelBuff = loadCLKernelFile(".\\cl_kernel\\updateForce.cl", &code_size);
+	program_updateForce = clCreateProgramWithSource(context, 1, (const char**)&kernelBuff, NULL,&clStatus);
+
+	clStatus = clBuildProgram(program_updateForce, 1, device_list, NULL, NULL, NULL);
+	if (clStatus != CL_SUCCESS)
+	{
+		cl_program program = program_updateForce;
+		std::cout << "error" << endl;
+		if (clStatus == CL_BUILD_PROGRAM_FAILURE) {
+			// Determine the size of the log
+			size_t log_size;
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+			// Allocate memory for the log
+			char *log = new char[log_size];
+
+			// Get the log
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+			// Print the log
+			printf("%s\n", log);
+			delete[] log;
+		}
+
+		system("pause");
+		exit(1);
+	}
+
+	kernel_updateForce = clCreateKernel(program_updateForce, "updateForce", &clStatus);	
+	if (kernelBuff)
+		delete[] kernelBuff;
+	clStatus = clSetKernelArg(kernel_updateForce, 0, sizeof(frameT), &frameT);
+	clStatus = clSetKernelArg(kernel_updateForce, 1, sizeof(cl_mem), &position_clmem);
+	clStatus = clSetKernelArg(kernel_updateForce, 2, sizeof(cl_mem), &velosity_clmem);
+	clStatus = clSetKernelArg(kernel_updateForce, 3, sizeof(cl_mem), &force_clmem);
+	clStatus = clSetKernelArg(kernel_updateForce, 4, sizeof(Gravity), &Gravity);
+	clStatus = clSetKernelArg(kernel_updateForce, 5, sizeof(patition_dis), &patition_dis);
+
+	
+	code_size = 0;
+	kernelBuff = loadCLKernelFile(".\\cl_kernel\\applyForce.cl", &code_size);
+	program_applyForce = clCreateProgramWithSource(context, 1, (const char **)&kernelBuff, NULL, &clStatus);
+	clStatus = clBuildProgram(program_applyForce, 1, device_list, NULL, NULL, NULL);
+	if (clStatus != CL_SUCCESS)
+	{
+		cl_program program = program_applyForce;
+		std::cout << "error" << endl;
+		if (clStatus == CL_BUILD_PROGRAM_FAILURE) {
+			// Determine the size of the log
+			size_t log_size;
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+			// Allocate memory for the log
+			char *log = new char[log_size];
+
+			// Get the log
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+			// Print the log
+			printf("%s\n", log);
+			delete[] log;
+		}
+
+		system("pause");
+		exit(1);
+	}
+	delete[] kernelBuff;
+
+	kernel_applyForce = clCreateKernel(program_applyForce, "applyForce", &clStatus);
+		
+	clStatus = clSetKernelArg(kernel_applyForce, 0, sizeof(frameT), &frameT);
+	clStatus = clSetKernelArg(kernel_applyForce, 1, sizeof(cl_mem), &force_clmem);
+	clStatus = clSetKernelArg(kernel_applyForce, 2, sizeof(cl_mem), &velosity_clmem);
+	clStatus = clSetKernelArg(kernel_applyForce, 3, sizeof(cl_mem), &velosity_clmem);
+	
+
+
+	code_size = 0;
+	kernelBuff = loadCLKernelFile(".\\cl_kernel\\updatePosition.cl", &code_size);
+	program_updatePosition = clCreateProgramWithSource(context, 1, (const char**)&kernelBuff, NULL, &clStatus);
+	clStatus = clBuildProgram(program_updatePosition, 1, device_list, NULL, NULL, NULL);
+	if (clStatus != CL_SUCCESS)
+	{
+		cl_program program = program_updatePosition;
+		std::cout << "error" << endl;
+		if (clStatus == CL_BUILD_PROGRAM_FAILURE) {
+			// Determine the size of the log
+			size_t log_size;
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+			// Allocate memory for the log
+
+			char *log = new char[log_size];
+
+			// Get the log
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+			// Print the log
+			printf("%s\n", log);
+			delete[] log;
+		}
+
+		system("pause");
+		exit(1);
+	}
+
+	delete[]kernelBuff;
+
+	kernel_updatePosition = clCreateKernel(program_updatePosition, "updatePosition", &clStatus);
+
+	clStatus = clSetKernelArg(kernel_updatePosition, 0, sizeof(frameT), &frameT);
+	clStatus = clSetKernelArg(kernel_updatePosition, 1, sizeof(cl_mem), &velosity_clmem);
+	clStatus = clSetKernelArg(kernel_updatePosition, 2, sizeof(cl_mem), &position_clmem);
+	clStatus = clSetKernelArg(kernel_updatePosition, 3, sizeof(cl_mem), &position_clmem);
+
+}
+
+
+
+void UseCL::updateForceCL()
+{
+	cl_int clStatus;
+
+	clEnqueueAcquireGLObjects(command_queue, 1, &position_clmem, 0, NULL, NULL);
+	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updateForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+
+	//debug
+	
+
+	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_applyForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+
+
+	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updatePosition, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+
+	//clStatus = clEnqueueReadBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
+	//clStatus = clEnqueueReadBuffer(command_queue, velosity_clmem, CL_TRUE, 0, cube_positions_size, cube_velosity, 0, NULL, NULL);
+	//clStatus = clEnqueueReadBuffer(command_queue, force_clmem, CL_TRUE, 0, cube_positions_size, cube_force, 0, NULL, NULL);
+
+	clStatus = clFlush(command_queue);
+	clStatus = clFinish(command_queue);
+	
+	clEnqueueReleaseGLObjects(command_queue, 1, &position_clmem, 0, NULL, NULL);
+	
+
+	/*
+	
+	for (int i = 0; i < CUBE_VERTEX_LENGTH; i += 4)
+	{
+		printf("%d %f %f %f\n", i/4, cube_positions[i], cube_positions[i+1], cube_positions[i+2]);
+		printf("%d %f %f %f\n", i/4, cube_velosity[i], cube_velosity[i + 1], cube_velosity[i + 2]);
+		printf("%d %f %f %f\n", i/4, cube_force[i], cube_force[i + 1], cube_force[i + 2]);
+		printf("\n");
+	}*/
+
+	return;
+}
+
+void UseCL::gpuCLUpdate()
+{
+	updateForceCL();
+}
+
+bool UseCL::isCLGLInteropSupported(char* extensionString)
+{
+	std::string allStrings(extensionString);
+	std::string searchString("cl_khr_gl_sharing");
+	std::size_t index = allStrings.find(searchString);
+	if (std::string::npos == index)
+	{
+		return false;
 	}
 	else
-	if (key == '1')
 	{
-		drawMode = 1;
-	}
-	else
-	if (key == '2')
-	{
-		drawMode = 2;
-	}
-	if (key == 27)
-	{
-		exit(0);
+		return true;
 	}
 }
+
+char *loadCLKernelFile(char* fileName, size_t *retStringSize)
+{
+	FILE *fin = NULL;
+	fopen_s(&fin, fileName, "rb");
+
+	if (fin == NULL)
+	{
+		std::cout << "can not found file" << fileName << endl;
+		system("pause");
+		exit(1);
+	}
+
+	fseek(fin, 0, SEEK_END);
+	*retStringSize = ftell(fin);
+	fseek(fin, 0, SEEK_SET);
+
+
+	char *data = NULL;
+	data = new char[*retStringSize + 1];
+
+	if (fread(data, *retStringSize, 1, fin) != 1)
+	{
+		fclose(fin);
+		delete[] data;
+		return 0;
+	}
+
+	data[*retStringSize] = '\0';
+	fclose(fin);
+	return data;
+}
+

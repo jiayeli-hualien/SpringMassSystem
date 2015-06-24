@@ -29,8 +29,8 @@ GLuint LoadShader(ShaderInfo *shaderinfo){
 		}
 
 		GLchar *infoLog;
-		GLsizei buffLength = 5;
-		glGetShaderInfoLog(shader, NULL, &buffLength, NULL);
+		GLsizei buffLength = 0;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &buffLength);
 		infoLog = new GLchar[buffLength+1];
 		infoLog[0] = '\0';
 		glGetShaderInfoLog(shader, buffLength, &buffLength, infoLog);
@@ -47,6 +47,16 @@ GLuint LoadShader(ShaderInfo *shaderinfo){
 	if (status != GL_TRUE)
 	{
 		cerr << "Link fail" << endl;
+
+		GLchar *infoLog=NULL;
+		GLsizei buffLength = 0;
+		glGetShaderiv(program, GL_INFO_LOG_LENGTH, &buffLength);
+		infoLog = new GLchar[buffLength+1];
+		infoLog[0] = '\0';
+		glGetProgramInfoLog(program, buffLength, &buffLength, infoLog);
+		cout << "infolog :" << infoLog << endl;
+
+		delete[] infoLog;
 	}
 
 	return program;

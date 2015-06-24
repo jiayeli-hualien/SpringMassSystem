@@ -68,6 +68,7 @@ Interactive Computer Graphics, A TOP-DOWN APPROACH WITH SHADER-BASED OPENGL®. E
 
 #include"LoadShader.h"
 #include"mathHelper.h"
+#include"vsync.h"
 
 
 using namespace std;
@@ -182,14 +183,14 @@ void initCubeVertex();
 void initCubeMesh();
 
 void initBuffers();
-void intitProgram();
+void intiShaderProgram();
 void init();
 
 
 
-const float DEFAULT_FRAME_T = 1.0 /  64.0f;
+const float DEFAULT_FRAME_T = 1.0 /  60.0f;
 float frameT = DEFAULT_FRAME_T;//step time, frame time
-float Gravity = -0.00025f*PATITION;//重力太強會壞掉
+float Gravity = -0.0025f*PATITION;//重力太強會壞掉
 float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
 float springDampK = 0.5f;//Hooke's law, K
 const bool useDamp = true;
@@ -207,10 +208,117 @@ const int IMPROVED_EULAR_METHOD = 1;
 int INTEGRATION = IMPROVED_EULAR_METHOD;
 void gameLoop();
 
+
+//copy the test example code from the book
+//OpenCL Programming by Example
+
+#include <CL/cl.h>
+//OpenCL kernel which is run for every work item created.
+namespace SAXPY{
+	const int SAXPY_VECTOR_SIZE = 1024;
+	const char *saxpy_kernel =
+		"__kernel \n"
+		"void saxpy_kernel(float alpha, \n"
+		" __global float *A, \n"
+		" __global float *B, \n"
+		" __global float *C) \n"
+		"{ \n"
+		" //Get the index of the work-item \n"
+		" int index = get_global_id(0); \n"
+		" C[index] = alpha* A[index] + B[index]; \n"
+		"} \n";
+	float alpha = 1.0f;
+	float *A=NULL, *B=NULL, *C=NULL;
+	cl_platform_id *platforms = NULL;
+	cl_uint num_platforms;
+	cl_uint usePlatform = 0;
+
+	cl_device_id *device_list=NULL;
+	cl_uint num_devices;
+
+	cl_context context;
+
+	void initSAXPY()
+	{
+		//allocating space
+		A = new float[SAXPY_VECTOR_SIZE];
+		B = new float[SAXPY_VECTOR_SIZE];
+		C = new float[SAXPY_VECTOR_SIZE];
+
+		for (int i = 0; i < SAXPY_VECTOR_SIZE; i++)
+		{
+			A[i] = i;
+			B[i] = SAXPY_VECTOR_SIZE - i;
+			C[i] = 0;
+		}
+	
+		//NULL means "I don't need this info"
+
+		//Only get num of platforms
+		cl_int clStatus = clGetPlatformIDs(0, NULL, &num_platforms);
+		cout << "num of platforms :" << num_platforms << endl;
+		return;
+
+		//Allocating yeah~~
+		platforms = new cl_platform_id[num_platforms];
+		//give all the platforms ID
+		clStatus = clGetPlatformIDs(num_platforms, platforms, NULL);
+		
+		//get the device num
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+
+		device_list = new cl_device_id[num_devices];
+		//get the device list
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+
+
+		//context = clCreateContext(NULL, num_devices, device_list, NULL, NULL, &clStatus);
+	}
+	void checkSAXPY()
+	{
+
+	}
+	void runSAXPY()
+	{
+		//add two times
+		//read back
+		//check answer
+	}
+	
+	void finalizeSAXPY()
+	{
+		//release resoucres
+		if (A)
+			delete [] A;
+		if (B)
+			delete [] B;
+		if (C)
+			delete [] C;
+
+		if (platforms)
+			delete platforms;
+		if (device_list)
+			delete device_list;
+
+		cl_int clStatus;
+		clStatus = clReleaseContext(context);
+	}
+	void testOpenCL()
+	{
+		initSAXPY();
+		//runSAXPY();
+		//finalizeSAXPY();
+	}
+}
+
 #include "LoadObj.h"
 LoadObj modelBunny;
 int main(int argc, char * argv[])
 {
+	SAXPY::testOpenCL();
+
+
+
 	windowparam.width = 800;
 	windowparam.height = 600;
 	
@@ -218,14 +326,14 @@ int main(int argc, char * argv[])
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutInitWindowSize(windowparam.width, windowparam.height);
 	glutInitWindowPosition(0, 0);
-	//glutInitContextVersion(4, 1);
+	//glutInitContextVersion(3, 0);
 	glutInitContextProfile(GLUT_CORE_PROFILE);
 
 
 	glutCreateWindow(argv[0]);
 
 	glewExperimental = true;
-	glewInit();
+	GLuint success = glewInit();
 
 	init();
 
@@ -346,8 +454,8 @@ void display()
 		glDrawArrays(GL_POINTS, 0, cube_positions_size / sizeof(GLfloat) / 4);
 
 	glUseProgram(bunnyShaderProgram);
-	glProgramUniformMatrix4fv(cubeShaderProgram,
-		glGetUniformLocation(cubeShaderProgram, "PVM"),
+	glProgramUniformMatrix4fv(bunnyShaderProgram,
+		glGetUniformLocation(bunnyShaderProgram, "PVM"),
 		1, GL_FALSE, glm::value_ptr(PVM));
 	modelBunny.draw();
 
@@ -576,7 +684,7 @@ void initBuffers()
 	glEnableVertexAttribArray(1);
 }
 
-void intitProgram()
+void intiShaderProgram()
 {
 	cubeShaderProgram = LoadShader(cubeShaderInfo);
 	bunnyShaderProgram = LoadShader(bunnyShaderInfo);
@@ -593,18 +701,32 @@ void init()
 	glLoadIdentity();
 	glEnable(GL_DEPTH_TEST);
 
+	bool isOk = InitVSync();
+	if (isOk) {
+		SetVSyncState(false);
+	}
+
+	//glEnable(GL_ARB_explicit_attrib_location);
+
+	//glFrontFace(GL_CCW);
 
 	glClearColor(0, 0, 0, 1);
+
+
+
 	initCubeVertex();
 	initCubeMesh();
 	initBuffers();
+
 	if (loadBunny)
 	{
 		//modelBunny.load("model\\bunny.obj");
 		modelBunny.load("model\\triangle.obj");
 		modelBunny.initGL_Buffer();
 	}
-	intitProgram();
+
+	intiShaderProgram();
+
 }
 
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance)
@@ -791,7 +913,7 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 					vertex[i + 1] = abs(vertex[i + 1]);
 					//vertex[i+1] = 0.0f;//座標別改了 Q_Q
 					velosity[i + 1] = abs(velosity[i + 1]);//base on normal  內積normal之後 扣掉再加與normal同向?
-					velosity[i + 1] = 0.0f;
+					//velosity[i + 1] = 0.0f;
 
 					//velosity[i] = 0.0f;
 					//velosity[i + 2] = 0.0f;

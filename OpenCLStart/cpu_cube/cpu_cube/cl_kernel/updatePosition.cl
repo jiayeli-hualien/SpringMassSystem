@@ -6,7 +6,8 @@ __kernel
 void updatePosition(float frameT,
 __global float *velosity,
 __global float *positionsSrc,
-__global float *positionsDst)
+__global float *positionsDst,
+int enableCollision)
 {
 	 int i = get_global_id(0);
 	 int size_i = get_global_size(0);
@@ -30,9 +31,12 @@ __global float *positionsDst)
 	positionsDst[index + 1] = positionsSrc[index + 1] + velosity[index + 1] * frameT;
 	positionsDst[index + 2] = positionsSrc[index + 2] + velosity[index + 2] * frameT;
 	
-	if(positionsDst[index + 1]<0.0f)
+	if(enableCollision)
 	{
-		positionsDst[index + 1]  = -positionsDst[index + 1];
-		velosity[index+1]=-velosity[index+1];
+		if(positionsDst[index + 1]<0.0f)
+		{
+			positionsDst[index + 1]  = -positionsDst[index + 1];
+			velosity[index+1]=-velosity[index+1];
+		}
 	}
 }

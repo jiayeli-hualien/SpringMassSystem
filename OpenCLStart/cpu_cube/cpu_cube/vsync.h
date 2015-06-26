@@ -9,6 +9,7 @@ PFNWGLEXTGETSWAPINTERVALPROC wglGetSwapIntervalEXT = NULL;
 bool InitVSync()
 {
 	char* extensions = (char*)glGetString(GL_EXTENSIONS);
+	if (extensions)
 	if (strstr(extensions, "WGL_EXT_swap_control")) {
 		wglSwapIntervalEXT = (PFNWGLEXTSWAPCONTROLPROC)wglGetProcAddress("wglSwapIntervalEXT");
 		wglGetSwapIntervalEXT = (PFNWGLEXTGETSWAPINTERVALPROC)wglGetProcAddress("wglGetSwapIntervalEXT");

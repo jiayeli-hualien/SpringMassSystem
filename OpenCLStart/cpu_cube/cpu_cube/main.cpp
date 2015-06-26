@@ -31,7 +31,7 @@ TODO list
 OK show points as mesh
 OK collision detection, ray to static mesh
 give the mesh normal vector
- load obj model, standford bunny
+OK load obj model, standford bunny
 OK damping, 有可能寫錯再查查文獻 (使用上一次的時間點的速度)
 	TODO: 將 damp 與 spring force 分離
 		  因為要將過強的 damp 改為最多將度降為0
@@ -39,7 +39,8 @@ OK damping, 有可能寫錯再查查文獻 (使用上一次的時間點的速度
 
 OK? with some bug, Improved Eular Method
 AABB accelerlator
-openCL after Monday
+OK OpenCL GPU, CPU for eular method
+OpenGL memory range map
 
 interpolation model by point info
 
@@ -50,11 +51,14 @@ mesh-mesh dynamic colision
 
 
 references:
-FREEGLUT
-GLEW
-GLM
-OpenGL® Programming Guide, Eighth Edition. Dave Shreiner et al.
-Interactive Computer Graphics, A TOP-DOWN APPROACH WITH SHADER-BASED OPENGL®. Edward Angel et al.
+1.	Dave Shreiner, Graham Sellers, John M. Kessenich, Bill M. Licea-Kane. OpenGL® Programming Guide: The Official Guide to Learning OpenGL, Version 4.3 (8th Edition). Pearson Education. 2013.
+2.	Edward Angel, Dave Shreiner. Interactive Computer Graphics: A TOP-DOWN APPROACH WITH SHADER-BASED OPENGL®. Pearson, 2011.
+3.	FreeGLUT http://freeglut.sourceforge.net/
+4.	GLEW - The OpenGL Extension Wrangler Library. http://glew.sourceforge.net/
+5.	GLM - OpenGL Mathematics. http://glm.g-truc.net/0.9.6/index.html
+6.	Mike Bailey. OpenCL / OpenGL Vertex Buffer Interoperability: A Particle System Case Study.
+7.	Ravishekhar Banger, Koushik Bjattacharyya. OpenCL Programming by Example. Packt Publishing. 2013.
+8.	Tomas M¨oller and Ben Trumbore. Fast, minimum storage ray-triangle intersection. Journal of Graphics Tools, 2(1):21–28, 1997.
 
 */
 #include<iostream>
@@ -78,7 +82,27 @@ using namespace std;
 #include"testOpenCL.h"
 
 
+//TODO auto generate
+GLint PATITION = 64;
+GLfloat invPatition = 1.0f / (PATITION);
+GLfloat patition_dis = 1.0f / (PATITION);
 
+const float DEFAULT_FRAME_T = 1.0 / 64.0f;
+
+float Gravity = -0.000025f*PATITION;//重力太強會壞掉
+float springForceK = 15.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
+float springDampK = 1.0f;//Hooke's law, K
+
+const int EULAR_METHOD = 0;
+const int IMPROVED_EULAR_METHOD = 1;
+int INTEGRATION = IMPROVED_EULAR_METHOD;
+
+const int NAIVE_CPU_UPDATE = 0;
+const int CL_GPU_UPDATE = 1;
+const int CL_CPU_UPDATE = 2;
+int UPDATE_METHOD = NAIVE_CPU_UPDATE;
+//int UPDATE_METHOD = CL_CPU_UPDATE;
+//int UPDATE_METHOD = CL_CPU_UPDATE;
 
 struct WindowParam
 {
@@ -103,10 +127,7 @@ GLuint VAOs[NumVAOs];
 GLuint VBOs[NumBuffers];
 GLuint EBOs[NumEBOs];
 
-//TODO auto generate
-GLint PATITION = 16;
-GLfloat invPatition = 1.0f / (PATITION);
-GLfloat patition_dis = 1.0f / (PATITION);
+
 GLsizei CUBE_VERTEX_LENGTH = PATITION*PATITION*PATITION*4;//XYZ
 GLsizei cube_positions_size = CUBE_VERTEX_LENGTH*sizeof(GLfloat);
 
@@ -195,11 +216,8 @@ void init();
 
 
 
-const float DEFAULT_FRAME_T = 1.0 /  64.0f;
 float frameT = DEFAULT_FRAME_T;//step time, frame time
-float Gravity = -0.0025f*PATITION;//重力太強會壞掉
-float springForceK = 20.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
-float springDampK = 0.5f;//Hooke's law, K
+
 const bool useDamp = true;
 float DISTANCE[4] = {0, invPatition, sqrt(2)*invPatition, sqrt(3)*invPatition};
 //float DISTANCE[4] = { 0, invPatition, invPatition, invPatition };
@@ -209,7 +227,7 @@ void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);//v
 void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force);// g = g(u(t), t)   u is position & velosity
 
 
-float BOUNCE_COEF = 0.95f;
+float BOUNCE_COEF = 1.0f;
 void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst);//x=vt and collision detection
 void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity);//a = 
 
@@ -239,31 +257,31 @@ namespace UseCL{
 	cl_program program_updatePosition;
 	cl_kernel kernel_updatePosition;
 
+	cl_program program_applyForceIEM;
+	cl_kernel kernel_applyForceIEM;
+
 	size_t global_size[3];
-	size_t local_size[3] = {1,1,1};
+	size_t local_size[3] = { 4, 4, 4 };
 
 	cl_mem position_clmem;
 	cl_mem velosity_clmem;
 	cl_mem force_clmem;
+	cl_mem position_swap_clmem;//for IEM
+	cl_mem velosity_swap_clmem;
+	cl_mem force_swap_clmem;
 
 	bool isCLGLInteropSupported(char* extensionString);
 	void initCL();
 	void calcSpringForceCL();
-	void applyForceCL();
-	void updateForceCL();
-	void gpuCLUpdate();
+	void clUpdate();
 }
 
 
 
-const int EULAR_METHOD = 0;
-const int IMPROVED_EULAR_METHOD = 1;
-int INTEGRATION = IMPROVED_EULAR_METHOD;
+
 bool enableUpdate = true;
 
-const int CPP_CPU_UPDATE=0;
-const int CL_GPU_UPDATE = 1;
-int UPDATE_METHOD = CL_GPU_UPDATE;
+
 
 void cpuUpdate();
 void gameLoop();
@@ -276,7 +294,7 @@ void gameLoop();
 
 #include "LoadObj.h"
 LoadObj modelBunny;
-bool testSAXPY_opencl = true;
+bool testSAXPY_opencl = false;
 int main(int argc, char * argv[])
 {
 	if (testSAXPY_opencl)
@@ -291,7 +309,7 @@ int main(int argc, char * argv[])
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutInitWindowSize(windowparam.width, windowparam.height);
 	glutInitWindowPosition(0, 0);
-	//glutInitContextVersion(3, 0);
+	glutInitContextVersion(3, 1);
 	glutInitContextProfile(GLUT_CORE_PROFILE);
 
 
@@ -309,6 +327,9 @@ int main(int argc, char * argv[])
 	glutMainLoop();
 	return 0;
 }
+
+float recordFPS[20];
+int topFPS = 0;
 void updateFPS()
 {
 	if (time_stamp == 0)
@@ -325,6 +346,19 @@ void updateFPS()
 		FPS = (float)frameCount / (float)(updatetime - time_stamp) * 1000;
 		time_stamp = updatetime;
 		frameCount = 0;
+
+		if (topFPS<20)
+			recordFPS[topFPS++] = FPS;
+		if (topFPS == 20)
+		{
+			float sum = 0.0f;
+			for (int i = 10; i < topFPS; i++)
+			{
+				sum += recordFPS[i];
+			}
+			printf("%f\n",sum/10.0f);
+			topFPS++;
+		}
 	}
 }
 
@@ -415,7 +449,7 @@ void display()
 
 
 	//glPointSize(20.0);
-	glPointSize(10.0);
+	glPointSize(5.0);
 	if (drawMode == 0 || drawMode == 2)
 		glDrawArrays(GL_POINTS, 0, cube_positions_size / sizeof(GLfloat) / 4);
 
@@ -424,16 +458,6 @@ void display()
 		glGetUniformLocation(bunnyShaderProgram, "PVM"),
 		1, GL_FALSE, glm::value_ptr(PVM));
 	modelBunny.draw();
-
-
-
-
-
-
-	
-
-
-
 
 
 	//init
@@ -693,8 +717,8 @@ void init()
 
 	intiShaderProgram();
 
-
-	UseCL::initCL();
+	if (UPDATE_METHOD==CL_GPU_UPDATE || UPDATE_METHOD==CL_CPU_UPDATE)
+		UseCL::initCL();
 }
 
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance)
@@ -964,11 +988,15 @@ void gameLoop()
 
 		switch (UPDATE_METHOD)
 		{
-		case 0:
+		case NAIVE_CPU_UPDATE:
 			cpuUpdate();
 			break;
-		case 1:
-			UseCL::gpuCLUpdate();
+		case CL_GPU_UPDATE:
+			UseCL::clUpdate();
+			break;
+		case CL_CPU_UPDATE:
+			UseCL::clUpdate();
+			updateBufferObject();
 			break;
 		}
 	}
@@ -1024,6 +1052,14 @@ void keyAction(unsigned char key, int x, int y)
 
 void UseCL::initCL()
 {
+	if (UPDATE_METHOD == CL_GPU_UPDATE)
+		usePlatform = 1;
+	else
+	if (UPDATE_METHOD == CL_CPU_UPDATE)
+	{
+		usePlatform = 0;
+	}
+
 	global_size[0] = global_size[1] = global_size[2] = PATITION;
 	//NULL means "I don't need this info"
 
@@ -1077,14 +1113,28 @@ void UseCL::initCL()
 
 
 	//get the device num
-	clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+	if (UPDATE_METHOD == CL_GPU_UPDATE)
+	{
+		cout << "Use GPU devices" << endl;
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+		device_list = new cl_device_id[num_devices];
 
-	device_list = new cl_device_id[num_devices];
-	//get the device list
-	clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, num_devices, device_list, &num_devices);
+		//get the device list
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, num_devices, device_list, &num_devices);
+	}
+	else
+	if (UPDATE_METHOD == CL_CPU_UPDATE)
+	{
+		cout << "Use CPU devices" << endl;
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_CPU, 0, NULL, &num_devices);
+		device_list = new cl_device_id[num_devices];
+		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_CPU, num_devices, device_list, &num_devices);
+	}
+
+		
 
 
-	std::cout << "device list (GPU devices)" << endl;
+	std::cout << "device list" << endl;
 	for (int i = 0; i < num_devices; i++)
 	{
 		std::cout << i + 1 << " ";
@@ -1108,20 +1158,34 @@ void UseCL::initCL()
 		0
 	};
 	
-	context = clCreateContext(props, num_devices, device_list, NULL, NULL, &clStatus);
+	if (UPDATE_METHOD == CL_GPU_UPDATE)
+		context = clCreateContext(props, num_devices, device_list, NULL, NULL, &clStatus);
+	else
+	if (UPDATE_METHOD == CL_CPU_UPDATE)
+		context = clCreateContext(NULL, num_devices, device_list, NULL, NULL, &clStatus);
 	cout << "create context" << clStatus << endl;
 	//create a command queue
 	command_queue = clCreateCommandQueue(context, device_list[0], 0, &clStatus);
 	cout << "create command queue" << clStatus << endl;
 
 	velosity_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
-	position_clmem = clCreateFromGLBuffer(context, CL_MEM_READ_WRITE, VBOs[0], &clStatus);
+	if (UPDATE_METHOD==CL_GPU_UPDATE)
+		position_clmem = clCreateFromGLBuffer(context, CL_MEM_READ_WRITE, VBOs[0], &clStatus);
+	else
+		position_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
 	force_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
+
+	velosity_swap_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
+	position_swap_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
+	force_swap_clmem = clCreateBuffer(context, CL_MEM_READ_WRITE, cube_positions_size, NULL, &clStatus);
 
 	//clear data
 	clStatus = clEnqueueWriteBuffer(command_queue, velosity_clmem, CL_TRUE, 0, cube_positions_size, cube_velosity, 0, NULL, NULL);
 	clStatus = clEnqueueWriteBuffer(command_queue, force_clmem, CL_TRUE, 0, cube_positions_size, cube_force, 0, NULL, NULL);
 	clStatus = clEnqueueWriteBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
+	clStatus = clEnqueueWriteBuffer(command_queue, velosity_swap_clmem, CL_TRUE, 0, cube_positions_size, cube_velosity, 0, NULL, NULL);
+	clStatus = clEnqueueWriteBuffer(command_queue, force_swap_clmem, CL_TRUE, 0, cube_positions_size, cube_force, 0, NULL, NULL);
+	clStatus = clEnqueueWriteBuffer(command_queue, position_swap_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
 
 	clStatus = clFlush(command_queue);
 	clStatus = clFinish(command_queue);
@@ -1166,6 +1230,8 @@ void UseCL::initCL()
 	clStatus = clSetKernelArg(kernel_updateForce, 3, sizeof(cl_mem), &force_clmem);
 	clStatus = clSetKernelArg(kernel_updateForce, 4, sizeof(Gravity), &Gravity);
 	clStatus = clSetKernelArg(kernel_updateForce, 5, sizeof(patition_dis), &patition_dis);
+	clStatus = clSetKernelArg(kernel_updateForce, 6, sizeof(springForceK), &springForceK);
+	clStatus = clSetKernelArg(kernel_updateForce, 7, sizeof(springDampK), &springDampK);
 
 	
 	code_size = 0;
@@ -1239,59 +1305,129 @@ void UseCL::initCL()
 
 	kernel_updatePosition = clCreateKernel(program_updatePosition, "updatePosition", &clStatus);
 
+	int enable_collision = true;
 	clStatus = clSetKernelArg(kernel_updatePosition, 0, sizeof(frameT), &frameT);
 	clStatus = clSetKernelArg(kernel_updatePosition, 1, sizeof(cl_mem), &velosity_clmem);
 	clStatus = clSetKernelArg(kernel_updatePosition, 2, sizeof(cl_mem), &position_clmem);
 	clStatus = clSetKernelArg(kernel_updatePosition, 3, sizeof(cl_mem), &position_clmem);
+	clStatus = clSetKernelArg(kernel_updatePosition, 4, sizeof(int), &enable_collision);
 
+
+	kernelBuff = loadCLKernelFile(".\\cl_kernel\\applyForceIEM.cl", &code_size);
+	program_applyForceIEM = clCreateProgramWithSource(context, 1, (const char**)&kernelBuff, NULL, &clStatus);
+	clStatus = clBuildProgram(program_applyForceIEM, 1, device_list, NULL, NULL, NULL);
+	if (clStatus != CL_SUCCESS)
+	{
+		cl_program program = program_applyForceIEM;
+		std::cout << "error" << endl;
+		if (clStatus == CL_BUILD_PROGRAM_FAILURE) {
+			// Determine the size of the log
+			size_t log_size;
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+
+			// Allocate memory for the log
+
+			char *log = new char[log_size];
+
+			// Get the log
+			clGetProgramBuildInfo(program, device_list[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+
+			// Print the log
+			printf("%s\n", log);
+			delete[] log;
+		}
+
+		system("pause");
+		exit(1);
+	}
+	delete[] kernelBuff;
+	kernel_applyForceIEM = clCreateKernel(program_applyForceIEM, "applyForceIEM", &clStatus);
+	clStatus = clSetKernelArg(kernel_applyForceIEM, 0, sizeof(frameT), &frameT);
+	clStatus = clSetKernelArg(kernel_applyForceIEM, 1, sizeof(force_clmem), &force_clmem);
+	clStatus = clSetKernelArg(kernel_applyForceIEM, 2, sizeof(force_swap_clmem), &force_swap_clmem);
+	clStatus = clSetKernelArg(kernel_applyForceIEM, 3, sizeof(velosity_clmem), &velosity_clmem);
 }
 
 
 
-void UseCL::updateForceCL()
+void UseCL::clUpdate()
 {
 	cl_int clStatus;
 
 	clEnqueueAcquireGLObjects(command_queue, 1, &position_clmem, 0, NULL, NULL);
-	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updateForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
 
-
-	//debug
-	
-
-	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_applyForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
-
-
-
-	clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updatePosition, 3, NULL, global_size, local_size, 0, NULL, NULL);
-
-
-	//clStatus = clEnqueueReadBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
-	//clStatus = clEnqueueReadBuffer(command_queue, velosity_clmem, CL_TRUE, 0, cube_positions_size, cube_velosity, 0, NULL, NULL);
-	//clStatus = clEnqueueReadBuffer(command_queue, force_clmem, CL_TRUE, 0, cube_positions_size, cube_force, 0, NULL, NULL);
-
-	clStatus = clFlush(command_queue);
-	clStatus = clFinish(command_queue);
-	
-	clEnqueueReleaseGLObjects(command_queue, 1, &position_clmem, 0, NULL, NULL);
-	
-
-	/*
-	
-	for (int i = 0; i < CUBE_VERTEX_LENGTH; i += 4)
+	if (INTEGRATION == EULAR_METHOD)
 	{
-		printf("%d %f %f %f\n", i/4, cube_positions[i], cube_positions[i+1], cube_positions[i+2]);
-		printf("%d %f %f %f\n", i/4, cube_velosity[i], cube_velosity[i + 1], cube_velosity[i + 2]);
-		printf("%d %f %f %f\n", i/4, cube_force[i], cube_force[i + 1], cube_force[i + 2]);
-		printf("\n");
-	}*/
+		clStatus = clSetKernelArg(kernel_updateForce, 1, sizeof(cl_mem), &position_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 2, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 3, sizeof(cl_mem), &force_clmem);
+		clStatus = clSetKernelArg(kernel_applyForce, 1, sizeof(cl_mem), &force_clmem);
+		clStatus = clSetKernelArg(kernel_applyForce, 2, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_applyForce, 3, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 1, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 2, sizeof(cl_mem), &position_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 3, sizeof(cl_mem), &position_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updateForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_applyForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updatePosition, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		if (UPDATE_METHOD == CL_CPU_UPDATE)
+		{
+			clStatus = clEnqueueReadBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
+		}
+
+		clStatus = clFlush(command_queue);
+		clStatus = clFinish(command_queue);
+	}
+	else
+	if (INTEGRATION == IMPROVED_EULAR_METHOD)
+	{
+		//calc u(t+h)
+		clStatus = clSetKernelArg(kernel_updateForce, 1, sizeof(cl_mem), &position_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 2, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 3, sizeof(cl_mem), &force_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updateForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		clStatus = clSetKernelArg(kernel_applyForce, 1, sizeof(cl_mem), &force_clmem);
+		clStatus = clSetKernelArg(kernel_applyForce, 2, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_applyForce, 3, sizeof(cl_mem), &velosity_swap_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_applyForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		clStatus = clSetKernelArg(kernel_updatePosition, 1, sizeof(cl_mem), &velosity_swap_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 2, sizeof(cl_mem), &position_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 3, sizeof(cl_mem), &position_swap_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updatePosition, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		//calc g(u(t+h),t+h)
+		clStatus = clSetKernelArg(kernel_updateForce, 1, sizeof(cl_mem), &position_swap_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 2, sizeof(cl_mem), &velosity_swap_clmem);
+		clStatus = clSetKernelArg(kernel_updateForce, 3, sizeof(cl_mem), &force_swap_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updateForce, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		//TODO implement applyForceIEM
+		clStatus = clSetKernelArg(kernel_applyForceIEM, 1, sizeof(force_clmem), &force_clmem);
+		clStatus = clSetKernelArg(kernel_applyForceIEM, 2, sizeof(force_swap_clmem), &force_swap_clmem);
+		clStatus = clSetKernelArg(kernel_applyForceIEM, 3, sizeof(velosity_clmem), &velosity_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_applyForceIEM, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+
+		clStatus = clSetKernelArg(kernel_updatePosition, 1, sizeof(cl_mem), &velosity_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 2, sizeof(cl_mem), &position_clmem);
+		clStatus = clSetKernelArg(kernel_updatePosition, 3, sizeof(cl_mem), &position_clmem);
+		clStatus = clEnqueueNDRangeKernel(command_queue, kernel_updatePosition, 3, NULL, global_size, local_size, 0, NULL, NULL);
+
+		if (UPDATE_METHOD == CL_CPU_UPDATE)
+		{
+			clStatus = clEnqueueReadBuffer(command_queue, position_clmem, CL_TRUE, 0, cube_positions_size, cube_positions, 0, NULL, NULL);
+		}
+		clStatus = clFlush(command_queue);
+		clStatus = clFinish(command_queue);
+	}
+
+	clEnqueueReleaseGLObjects(command_queue, 1, &position_clmem, 0, NULL, NULL);
+
 
 	return;
-}
-
-void UseCL::gpuCLUpdate()
-{
-	updateForceCL();
 }
 
 bool UseCL::isCLGLInteropSupported(char* extensionString)

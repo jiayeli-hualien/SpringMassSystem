@@ -170,11 +170,12 @@ namespace SAXPY{
 
 
 		//get the device num
-		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+		
+			clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
 
 		device_list = new cl_device_id[num_devices];
 		//get the device list
-		clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, num_devices, device_list, &num_devices);
+			clStatus = clGetDeviceIDs(platforms[usePlatform], CL_DEVICE_TYPE_GPU, num_devices, device_list, &num_devices);
 
 
 		cout << "device list (GPU devices)" << endl;

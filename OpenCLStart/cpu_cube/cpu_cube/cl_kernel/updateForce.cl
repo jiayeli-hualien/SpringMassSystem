@@ -1,24 +1,17 @@
-__kernel
-void updateForce(float frameT,
-__global float *positions,
-__global float *velosity,
-__global float *force,
-float gravity, float distance);
-int vertex_index(int i, int j, int k, int size_j, int size_k);
 
 int vertex_index(int i, int j, int k, int size_j, int size_k)
 {
 	return (((i*size_j)+j)*size_k+k)*4;
 }
 
-void springForce(float *sumForce, float *p1, float *p2, float dis, float dd);
+void springForce(float *sumForce, float *p1, float *p2, float *v1, float *v2, float dis, float springK, float springDampK);
 
 __kernel
 void updateForce(float frameT,
 __global float *positions,
 __global float *velosity,
 __global float *force,
-float gravity, float distance)
+float gravity, float distance, float springK, float springDampK)
 {
 	 //Get the index of the work-item
 	 int i = get_global_id(0);
@@ -42,6 +35,7 @@ float gravity, float distance)
 	 
 	 float sumForce[3]={0.0f,0.0f,0.0f};
 	 float p1[3] = {positions[index],positions[index+1],positions[index+2]};
+	 float v1[3] = {velosity[index], velosity[index+1], velosity[index+2]};
 	 for(int s=-1; s<=1; s++)
 	 {
 		 if(i+s<0||i+s>=size_i)
@@ -60,8 +54,9 @@ float gravity, float distance)
 				int indexNN = vertex_index(i+s,j+t,k+u,size_j,size_k);
 						
 				float p2[3] = {positions[indexNN],positions[indexNN+1],positions[indexNN+2]};
+				float v2[3] = {velosity[indexNN], velosity[indexNN+1], velosity[indexNN+2]};
 				
-				springForce(sumForce,p1,p2,distance*sqrt((float)(abs(s)+abs(t)+abs(u))), size_i*size_i*gravity);
+				springForce(sumForce,p1,p2,v1,v2,distance*sqrt((float)(abs(s)+abs(t)+abs(u))), springK, springDampK);
 			}
 		 }
 	 }
@@ -107,21 +102,24 @@ v1[0] = v2[0], v1[1] = v2[1], v1[2] = v2[2]
 #define VEC3_ACC(v1,v2)\
 v1[0]+=v2[0], v1[1]+=v2[1], v1[2]+=v2[2]
 
-#define SPRING_FORCE_K 20.0f
-
-void springForce(float *sumForce, float *p1, float *p2, float springLen, float springDD)
+void springForce(float *sumForce, float *p1, float *p2, float *v1, float *v2, float springLen, float springK, float springDampK)
 {
 	
 	float dir[3];
+	float diffV[3];
 	VEC3_SUB(dir,p1,p2);
+	VEC3_SUB(diffV, v1, v2);
 	float distance = VEC3_NORM(dir);
 	if(distance==0.0f)
 		return;
-	
 	VEC3_DIV(dir,distance);
+	float springForceSize = (distance-springLen)*springK;
+	if(springDampK!=0.0f)
+	{
+		float damp = VEC3_DOT(dir, diffV)*springDampK;
+		springForceSize-=damp;
+	}
+	VEC3_MUL(dir,springForceSize);//calc force
 	
-	const float sprintForceSize = (distance-springLen)*SPRING_FORCE_K*springDD;
-	
-	VEC3_MUL(dir,sprintForceSize);//calc force
 	VEC3_ACC(sumForce, dir);//sum force
 }

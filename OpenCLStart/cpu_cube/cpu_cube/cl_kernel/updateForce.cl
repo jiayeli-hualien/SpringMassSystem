@@ -62,7 +62,7 @@ float gravity, float distance, float springK, float springDampK)
 	 }
 	
 	force[index  ] = sumForce[0];
-	force[index+1] = sumForce[1]+gravity*positions[index+3];
+	force[index+1] = sumForce[1]+gravity*velosity[index+3];
 	force[index+2] = sumForce[2];	
 	
 //test
@@ -113,7 +113,7 @@ void springForce(float *sumForce, float *p1, float *p2, float *v1, float *v2, fl
 	if(distance==0.0f)
 		return;
 	VEC3_DIV(dir,distance);
-	float springForceSize = (distance-springLen)*springK;
+	float springForceSize = -(distance-springLen)*springK;
 	if(springDampK!=0.0f)
 	{
 		float damp = VEC3_DOT(dir, diffV)*springDampK;

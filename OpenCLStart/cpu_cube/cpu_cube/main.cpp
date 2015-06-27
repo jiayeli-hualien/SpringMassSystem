@@ -64,7 +64,7 @@ references:
 #include<iostream>
 #include<cstdio>
 #include<cstdlib>
-
+#include<math.h>
 #include<GL\glew.h>
 #include<GL\freeglut.h>
 #include<glm\gtc\matrix_transform.hpp>
@@ -82,16 +82,18 @@ using namespace std;
 #include"testOpenCL.h"
 
 
+
 //TODO auto generate
-GLint PATITION = 64;
-GLfloat invPatition = 1.0f / (PATITION);
-GLfloat patition_dis = 1.0f / (PATITION);
+GLint PATITION = 2;
+GLfloat invPatition = 1.0f / (PATITION-1.0f);
+GLfloat patition_dis = 1.0f / (PATITION-1.0f);
 
 const float DEFAULT_FRAME_T = 1.0 / 64.0f;
+bool enableVsync = true;//限制60 FPS
 
-float Gravity = -0.000025f*PATITION;//重力太強會壞掉
-float springForceK = 15.0f * Gravity*PATITION*PATITION;//彈力太小會塌陷，彈力太強會壞掉
-float springDampK = 1.0f;//Hooke's law, K
+float Gravity = -0.1f/PATITION*10*10;//重力太強會壞掉
+float springForceK = abs(10.0f * Gravity*PATITION*PATITION);//彈力太小會塌陷，彈力太強會壞掉
+float springDampK = 0.5f;//Hooke's law, K
 
 const int EULAR_METHOD = 0;
 const int IMPROVED_EULAR_METHOD = 1;
@@ -100,8 +102,8 @@ int INTEGRATION = IMPROVED_EULAR_METHOD;
 const int NAIVE_CPU_UPDATE = 0;
 const int CL_GPU_UPDATE = 1;
 const int CL_CPU_UPDATE = 2;
-int UPDATE_METHOD = NAIVE_CPU_UPDATE;
-//int UPDATE_METHOD = CL_CPU_UPDATE;
+//int UPDATE_METHOD = NAIVE_CPU_UPDATE;
+int UPDATE_METHOD = CL_GPU_UPDATE;
 //int UPDATE_METHOD = CL_CPU_UPDATE;
 
 struct WindowParam
@@ -218,9 +220,7 @@ void init();
 
 float frameT = DEFAULT_FRAME_T;//step time, frame time
 
-const bool useDamp = true;
-float DISTANCE[4] = {0, invPatition, sqrt(2)*invPatition, sqrt(3)*invPatition};
-//float DISTANCE[4] = { 0, invPatition, invPatition, invPatition };
+float DISTANCE[4] = { 0, patition_dis, sqrt(2)*patition_dis, sqrt(3)*patition_dis};
 Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const Float3 &v2, float distance);
 Float3 calcSpringForce(int i, int j, int k, Float3 &p1, Float3 &v1, GLfloat *positions, GLfloat *velosity);
 void applyForce(GLfloat *force, GLfloat *velositySrc, GLfloat *velosityDest);//v = at
@@ -261,7 +261,9 @@ namespace UseCL{
 	cl_kernel kernel_applyForceIEM;
 
 	size_t global_size[3];
-	size_t local_size[3] = { 4, 4, 4 };
+	size_t local_size[3] = { glm::min((unsigned int)4, (unsigned int)PATITION),
+		glm::min((unsigned int)4, (unsigned int)PATITION),
+		glm::min((unsigned int)4, (unsigned int)PATITION) };
 
 	cl_mem position_clmem;
 	cl_mem velosity_clmem;
@@ -693,14 +695,14 @@ void init()
 
 	bool isOk = InitVSync();
 	if (isOk) {
-		SetVSyncState(false);
+		SetVSyncState(enableVsync);
 	}
 
 	//glEnable(GL_ARB_explicit_attrib_location);
 
 	//glFrontFace(GL_CCW);
 
-	glClearColor(0, 0, 0, 1);
+	glClearColor(0.8, 0.8, 1, 1);
 
 
 
@@ -733,15 +735,15 @@ Float3 springForce(const Float3 &p1, const Float3 &p2, const Float3 &v1, const F
 		return force;
 
 	Float3 dir = diff / diff.norm2();
-	const float springForce = (diff.norm2() - distance)*springForceK;
+	float springForce = -(diff.norm2() - distance)*springForceK;
 
-	if (useDamp)
+	if (springDampK != 0.0f)
 	{
-		float sprintDamping = diffV.dot(dir)*springDampK;
-		force = dir*(springForce - sprintDamping);
+		float springDamping = diffV.dot(dir)*springDampK;
+		springForce -= springDamping;
 	}
-	else
-		force = dir*(-1.0f)*(springForce);
+	
+	force = dir*(springForce);
 
 	return force;
 }
@@ -780,8 +782,6 @@ Float3 calcSpringForce(int i, int j, int k, Float3 &p1, Float3 &v1, GLfloat *pos
 			}
 		}
 	}
-	//gravity
-	force.y += Gravity;
 
 	return force;
 }
@@ -828,11 +828,11 @@ void updateForce(GLfloat *positions, GLfloat *velosity, GLfloat *force)
 }
 
 bool testIntersection = false;
-bool testIntersectionModel = true;
+bool testIntersectionModel = false;
 void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positionsDst, bool enable_collision_detection)
 {
 	GLfloat* const vertex = positionsDst;
-	GLfloat const GROUND = -0.1f;
+	GLfloat const GROUND = 0.0f;
 
 	//test triangle palne
 	Float3 v0{ -0.1f, 0.5f, -0.1f }, v1{ -0.1f, 0.5f, 1.0f }, v2{ 1.0f, 0.5f, 1.0f };
@@ -918,13 +918,13 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 		
 		if (vertex[i + 1] <= GROUND)
 		{
-		vertex[i + 1] = -vertex[i + 1];
-		velosity[i + 1] = -velosity[i + 1];
+			vertex[i + 1] = -vertex[i + 1];
+			velosity[i + 1] = -velosity[i + 1];
 
 
-		//摩擦力
-		velosity[i] = 0.0f;
-		velosity[i + 2] = 0.0f;
+			//摩擦力
+			//velosity[i] = 0.0f;
+			//velosity[i + 2] = 0.0f;
 		}
 	}
 }
@@ -988,16 +988,16 @@ void gameLoop()
 
 		switch (UPDATE_METHOD)
 		{
-		case NAIVE_CPU_UPDATE:
-			cpuUpdate();
-			break;
-		case CL_GPU_UPDATE:
-			UseCL::clUpdate();
-			break;
-		case CL_CPU_UPDATE:
-			UseCL::clUpdate();
-			updateBufferObject();
-			break;
+			case NAIVE_CPU_UPDATE:
+				cpuUpdate();
+				break;
+			case CL_GPU_UPDATE:
+				UseCL::clUpdate();
+				break;
+			case CL_CPU_UPDATE:
+				UseCL::clUpdate();
+				updateBufferObject();
+				break;
 		}
 	}
 	glutPostRedisplay();

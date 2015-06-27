@@ -33,7 +33,7 @@ int enableCollision)
 	
 	if(enableCollision)
 	{
-		if(positionsDst[index + 1]<0.0f)
+		if(positionsDst[index + 1]<=0.0f)
 		{
 			positionsDst[index + 1]  = -positionsDst[index + 1];
 			velosity[index+1]=-velosity[index+1];

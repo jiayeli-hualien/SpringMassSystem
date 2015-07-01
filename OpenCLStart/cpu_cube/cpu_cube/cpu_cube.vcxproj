@@ -153,6 +153,7 @@
     <ClCompile Include="LoadObj.cpp" />
     <ClCompile Include="LoadShader.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mathHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LoadObj.h" />

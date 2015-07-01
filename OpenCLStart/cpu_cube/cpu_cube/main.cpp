@@ -84,14 +84,14 @@ using namespace std;
 
 
 //TODO auto generate
-GLint PATITION = 2;
+GLint PATITION = 16;
 GLfloat invPatition = 1.0f / (PATITION-1.0f);
 GLfloat patition_dis = 1.0f / (PATITION-1.0f);
 
 const float DEFAULT_FRAME_T = 1.0 / 64.0f;
 bool enableVsync = true;//限制60 FPS
 
-float Gravity = -0.1f/PATITION*10*10;//重力太強會壞掉
+float Gravity = -0.01f/PATITION*10*10;//重力太強會壞掉
 float springForceK = abs(10.0f * Gravity*PATITION*PATITION);//彈力太小會塌陷，彈力太強會壞掉
 float springDampK = 0.5f;//Hooke's law, K
 
@@ -102,9 +102,12 @@ int INTEGRATION = IMPROVED_EULAR_METHOD;
 const int NAIVE_CPU_UPDATE = 0;
 const int CL_GPU_UPDATE = 1;
 const int CL_CPU_UPDATE = 2;
-//int UPDATE_METHOD = NAIVE_CPU_UPDATE;
-int UPDATE_METHOD = CL_GPU_UPDATE;
+int UPDATE_METHOD = NAIVE_CPU_UPDATE;
+//int UPDATE_METHOD = CL_GPU_UPDATE;
 //int UPDATE_METHOD = CL_CPU_UPDATE;
+
+bool loadColiisionModel = true;
+bool loadDefomModel = true;
 
 struct WindowParam
 {
@@ -186,12 +189,12 @@ ShaderInfo bunnyShaderInfo[]=
 GLuint cubeShaderProgram;
 GLuint bunnyShaderProgram;
 
-inline int GET_INDEX(int x, int y, int z)
+inline int GET_INDEX(const int x, const int y, const int z)
 {
 	return (PATITION*PATITION*(x) + PATITION*(y) + z) * 4;
 }
 
-inline int GET_VERTEX_INDEX(int x, int y, int z)
+inline int GET_VERTEX_INDEX(const int x, const int y, const int z)
 {
 	return (PATITION*PATITION*(x)+PATITION*(y)+z);
 }
@@ -295,7 +298,8 @@ void gameLoop();
 
 
 #include "LoadObj.h"
-LoadObj modelBunny;
+LoadObj modelCollision;
+DeformObj deformModel;
 bool testSAXPY_opencl = false;
 int main(int argc, char * argv[])
 {
@@ -452,15 +456,19 @@ void display()
 
 	//glPointSize(20.0);
 	glPointSize(5.0);
-	if (drawMode == 0 || drawMode == 2)
+	if (drawMode == 0 || drawMode == 2 || drawMode==4)
 		glDrawArrays(GL_POINTS, 0, cube_positions_size / sizeof(GLfloat) / 4);
 
 	glUseProgram(bunnyShaderProgram);
 	glProgramUniformMatrix4fv(bunnyShaderProgram,
 		glGetUniformLocation(bunnyShaderProgram, "PVM"),
 		1, GL_FALSE, glm::value_ptr(PVM));
-	modelBunny.draw();
+	if (loadColiisionModel)
+		modelCollision.draw();
 
+	if (drawMode==3||drawMode==4)
+		if (loadDefomModel)
+			deformModel.draw();
 
 	//init
 	beginPrintText();
@@ -517,7 +525,7 @@ void initCubeVertex()
 				cube_positions[index] = position.x / position.w;
 				cube_positions[index + 1] = position.y / position.w;
 				cube_positions[index + 2] = position.z / position.w;
-				cube_positions[index + 3] = position.w / position.w;
+				cube_positions[index + 3] = 1.0f;
 
 
 				cube_positions_IEM[index + 3] = 1.0f;//w for homogeneous system
@@ -683,7 +691,7 @@ void intiShaderProgram()
 }
 
 
-bool loadBunny = true;
+
 void init()
 {
 	glViewport(0, 0, windowparam.width, windowparam.height);
@@ -710,11 +718,18 @@ void init()
 	initCubeMesh();
 	initBuffers();
 
-	if (loadBunny)
+	if (loadColiisionModel)
 	{
-		//modelBunny.load("model\\bunny.obj");
-		modelBunny.load("model\\triangle.obj");
-		modelBunny.initGL_Buffer();
+		//modelCollision.load("model\\bunny.obj");
+		modelCollision.load("model\\triangle.obj");
+		modelCollision.initGL_Buffer();
+	}
+
+	if (loadDefomModel)
+	{
+		deformModel.load("model\\bunny.obj");
+		deformModel.normalize(0.5f,0.5f,0.5f,1.0f);
+		deformModel.initGL_Buffer();
 	}
 
 	intiShaderProgram();
@@ -875,24 +890,24 @@ void updatePosition(GLfloat *velosity, GLfloat *positionsSrc, GLfloat *positions
 		if (testIntersectionModel)
 		{
 			//0.5 triangle plane test
-			for (int j = 0; j<modelBunny.n_face; j+=1)
+			for (int j = 0; j<modelCollision.n_face; j+=1)
 			{
-				int v0Index = modelBunny.faces[j*3];
-				int v1Index = modelBunny.faces[j*3 + 1];
-				int v2Index = modelBunny.faces[j*3 + 2];
+				int v0Index = modelCollision.faces[j*3];
+				int v1Index = modelCollision.faces[j*3 + 1];
+				int v2Index = modelCollision.faces[j*3 + 2];
 
-				Float3 v0{ modelBunny.vertex[v0Index * 4],
-					modelBunny.vertex[v0Index * 4 + 1],
-					modelBunny.vertex[v0Index * 4 + 2] };
+				Float3 v0{ modelCollision.vertex[v0Index * 4],
+					modelCollision.vertex[v0Index * 4 + 1],
+					modelCollision.vertex[v0Index * 4 + 2] };
 
-				Float3 v1{ modelBunny.vertex[v1Index * 4],
-					modelBunny.vertex[v1Index * 4 + 1],
-					modelBunny.vertex[v1Index * 4 + 2] };
+				Float3 v1{ modelCollision.vertex[v1Index * 4],
+					modelCollision.vertex[v1Index * 4 + 1],
+					modelCollision.vertex[v1Index * 4 + 2] };
 
 				Float3 v2{
-					modelBunny.vertex[v2Index * 4],
-					modelBunny.vertex[v2Index * 4 + 1],
-					modelBunny.vertex[v2Index * 4 + 2]
+					modelCollision.vertex[v2Index * 4],
+					modelCollision.vertex[v2Index * 4 + 1],
+					modelCollision.vertex[v2Index * 4 + 2]
 				};
 
 				Float3 diff = { vertex[i], vertex[i + 1], vertex[i + 2] };
@@ -948,6 +963,12 @@ void applyForceIEM(GLfloat *force, GLfloat *force2, GLfloat *velosity)
 	}
 }
 
+void updateDeformModel()
+{
+	deformModel.cpuUpdateDeform(PATITION, cube_positions);
+	deformModel.updateVertexBuffer();
+}
+
 
 void cpuUpdate()
 {
@@ -972,6 +993,12 @@ void cpuUpdate()
 		applyForceIEM(cube_force_IEM, cube_force, cube_velosity);
 		updatePosition(cube_velosity, cube_positions, cube_positions, true);
 
+	}
+
+	//testing function
+	if (loadDefomModel)
+	{
+		updateDeformModel();
 	}
 
 	updateBufferObject();
@@ -999,6 +1026,10 @@ void gameLoop()
 				updateBufferObject();
 				break;
 		}
+
+		
+
+
 	}
 	glutPostRedisplay();
 
@@ -1032,6 +1063,12 @@ void keyAction(unsigned char key, int x, int y)
 			break;
 		case '2':
 			drawMode = 2;
+			break;
+		case '3':
+			drawMode = 3;
+			break;
+		case '4':
+			drawMode = 4;
 			break;
 		case 'P':
 		case 'p':

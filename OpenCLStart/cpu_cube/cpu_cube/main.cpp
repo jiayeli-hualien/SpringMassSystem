@@ -84,7 +84,7 @@ using namespace std;
 
 
 //TODO auto generate
-GLint PATITION = 16;
+GLint PATITION = 2;
 GLfloat invPatition = 1.0f / (PATITION-1.0f);
 GLfloat patition_dis = 1.0f / (PATITION-1.0f);
 
@@ -209,7 +209,7 @@ void endPrintText();
 void keyAction(unsigned char key, int x, int y);
 void updateBufferObject();
 
-int drawMode = 1;
+int drawMode = 3;
 void display();
 void initCubeVertex();
 

@@ -84,7 +84,7 @@ using namespace std;
 
 
 //TODO auto generate
-GLint PATITION = 2;
+GLint PATITION = 16;
 GLfloat invPatition = 1.0f / (PATITION-1.0f);
 GLfloat patition_dis = 1.0f / (PATITION-1.0f);
 

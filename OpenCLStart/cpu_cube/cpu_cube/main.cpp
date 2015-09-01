@@ -89,7 +89,7 @@ GLfloat invPatition = 1.0f / (PATITION-1.0f);
 GLfloat patition_dis = 1.0f / (PATITION-1.0f);
 
 const float DEFAULT_FRAME_T = 1.0 / 64.0f;
-bool enableVsync = true;//限制60 FPS
+bool enableVsync = false;//限制60 FPS
 
 float Gravity = -0.01f/PATITION*10*10;//重力太強會壞掉
 float springForceK = abs(10.0f * Gravity*PATITION*PATITION);//彈力太小會塌陷，彈力太強會壞掉

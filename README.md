@@ -1,7 +1,4 @@
 # SpringMassSystem
-abcd6891@gmail.com
-r03922072@ntu.edu.tw
-
 Lisence
 TBA
 follow FreeGlut, GLEW, GLM, OpenCL, MSVC
